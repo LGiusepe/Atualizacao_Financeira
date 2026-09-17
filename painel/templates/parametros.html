@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block titulo %}Parâmetros do sistema{% endblock %}
+
+{% block conteudo %}
+{# Servidor velho não fornece `campos_caminho` nem a rota que grava: a tela
+   toda vira formulário quebrado. Melhor mostrar só o aviso do topo. #}
+{% set pode_editar = campos_caminho is defined %}
+<style>
+  .par td:first-child{width:15rem;color:var(--suave);font-size:.82rem;
+    vertical-align:top}
+  .par td{padding:.42rem .5rem}
+  .par .valor{overflow-wrap:anywhere}
+  .marca-estado{font-size:.72rem;padding:.08rem .45rem;border-radius:20px;
+    font-weight:600;white-space:nowrap;margin-left:.4rem}
+  .existe{background:var(--ok-fraco);color:var(--ok)}
+  .sumido{background:var(--erro-fraco);color:var(--erro)}
+  .caixa-corpo{white-space:pre-wrap;font-size:.84rem;margin:.3rem 0 0;
+    padding:.6rem .7rem;background:var(--fundo);border:1px solid var(--borda);
+    border-radius:6px}
+  /* Rótulo à esquerda, campo à direita: com 6 caminhos longos, empilhar
+     rótulo em cima do campo dobraria a altura do cartão. */
+  .linha-par{display:grid;grid-template-columns:15rem 1fr;gap:.8rem;
+    align-items:start;padding:.42rem 0}
+  .linha-par>label{margin:.35rem 0 0;text-transform:none;font-size:.82rem;
+    letter-spacing:0}
+  .linha-par input{width:100%}
+  .apoio-campo{font-size:.74rem;color:var(--suave);margin-top:.22rem}
+  .area-texto{width:100%;box-sizing:border-box;font:inherit;font-size:.84rem;
+    line-height:1.5;resize:vertical;padding:.55rem .65rem;border-radius:6px;
+    border:1px solid var(--borda);background:var(--fundo);color:var(--texto)}
+  @media (max-width: 720px){
+    .linha-par{grid-template-columns:1fr}
+    .linha-par>label{margin:0}
+  }
+</style>
+
+<h1>Parâmetros do sistema</h1>
+<p class="sub">
+  O que a automação está usando agora. O que dá para editar está em campo
+  branco; grava em <span class="mono">{{ arquivo_settings }}</span>, com cópia
+  do arquivo anterior em <span class="mono">dados/backups/</span>.
+</p>
+
+{% if erro | default('') %}
+  <div class="aviso perigo">
+    <strong>Nada foi salvo.</strong>
+    <ul>{% for e in (erro | default('')).split(' | ') %}<li>{{ e }}</li>{% endfor %}</ul>
+    Os valores continuam como estavam. Corrija e salve de novo.
+  </div>
+{% endif %}
+{% if guardado | default('') %}
+  <div class="aviso"><span style="color:var(--ok);font-weight:600">✓ {{ guardado | default('') }}</span></div>
+{% endif %}
+
+{% if problemas %}
+  <div class="aviso perigo">
+    <strong>{{ problemas|length }} caminho(s) não foram encontrados.</strong>
+    Enquanto isso não for resolvido, as etapas que dependem deles falham.
+    <ul>{% for p in problemas %}<li class="mono">{{ p }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+{% if pode_editar %}
+<form method="post" action="/configuracao/parametros" id="form-parametros">
+<input type="hidden" name="competencia" value="{{ competencia }}">
+
+<h2>Onde os arquivos ficam</h2>
+<div class="cartao">
+  {% for campo, rotulo, valor, existe, nota in campos_caminho | default([]) %}
+    <div class="linha-par">
+      <label for="{{ campo }}">{{ rotulo }}</label>
+      <div>
+        <input id="{{ campo }}" name="{{ campo }}" value="{{ valor }}"
+               class="mono" spellcheck="false" autocomplete="off">
+        <div class="apoio-campo">
+          <span class="marca-estado {{ 'existe' if existe else 'sumido' }}">
+            {{ 'encontrado' if existe else 'não encontrado' }}</span>
+          {{ nota }}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+  <p class="explica" style="margin:.4rem 0 0">
+    As três primeiras são conferidas antes de salvar: se a pasta ou a planilha
+    não existirem, nada é gravado e a tela diz qual falhou. As duas últimas
+    linhas do OneDrive são <strong>relativas</strong> à raiz acima; as pastas
+    locais são relativas à pasta do projeto e são criadas se faltarem.
+  </p>
+</div>
+
+<h2>Pasta de cada conta</h2>
+<div class="cartao">
+  <p class="explica" style="margin:0 0 .8rem">
+    Onde cada conta ativa arquiva no OneDrive — a pasta do fornecedor, que
+    guarda todos os meses. Abaixo de cada uma, onde
+    <strong>{{ competencia.extenso }}</strong> cairia dentro dela.
+    Caminho dentro de <em>Autorizações de pagamento</em> é gravado como
+    subpasta; qualquer outro é gravado como caminho próprio, à parte — é o
+    caso da Techlise. <strong>Pasta inexistente não é salva.</strong>
+  </p>
+  {% for c in pastas_das_contas | default([]) %}
+    <div class="linha-par">
+      <label for="pasta__{{ c.id }}">
+        {{ c.rotulo }}
+        {%- if c.rotulo != c.pastas %}
+          <span class="apoio-campo" style="display:block;font-weight:400">
+            apelido de {{ c.pastas }}</span>
+        {%- endif %}
+      </label>
+      <div>
+        <input id="pasta__{{ c.id }}" name="pasta__{{ c.id }}" value="{{ c.caminho }}"
+               class="mono" spellcheck="false" autocomplete="off">
+        <div class="apoio-campo">
+          <span class="marca-estado {{ 'existe' if c.existe else 'sumido' }}">
+            {{ 'encontrada' if c.existe else 'não encontrada' }}</span>
+          {%- if c.fora_do_padrao %}
+            <span class="pastilha atencao">fora de Autorizações de pagamento</span>
+          {%- endif %}
+          <span class="mono" style="display:block">{{ competencia }} &rsaquo; {{ c.exemplo }}</span>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <p class="vazio">Nenhuma conta ativa em {{ competencia.extenso }}.</p>
+  {% endfor %}
+</div>
+
+<h2>Travas de segurança</h2>
+<div class="cartao">
+  {% if ambiente.simulando %}
+    <div class="aviso simulacao" style="margin:0 0 .8rem">
+      <strong>Modo simulação ligado.</strong> Nada é gravado fora de
+      <span class="mono">dados/</span>. As etapas de publicação, e-mail e
+      checklist mostram o que fariam e param aí.
+    </div>
+  {% else %}
+    <div class="aviso alerta" style="margin:0 0 .8rem">
+      <strong>Modo simulação desligado.</strong> As etapas confirmadas gravam
+      de verdade no OneDrive e na planilha compartilhada.
+    </div>
+  {% endif %}
+  <table class="par">
+    <tbody>
+      <tr><td>Simulação</td><td>{{ 'ligada' if ambiente.seguranca.simulacao else 'desligada' }}</td></tr>
+      <tr><td>Confirmar antes de gravar</td>
+          <td>{{ 'sim' if ambiente.seguranca.confirmar_antes_de_gravar else 'não' }}</td></tr>
+      <tr><td>Backup antes de sobrescrever</td>
+          <td>{{ 'sim' if ambiente.seguranca.backup_antes_de_sobrescrever else 'não' }}</td></tr>
+      <tr><td>Exclusão fora de dados/</td>
+          <td><strong>bloqueada</strong>
+            <div style="color:var(--suave);font-size:.76rem">
+              Esta trava não tem chave: desligar a simulação libera gravação,
+              nunca exclusão. Prova em
+              <span class="mono">scripts/provar_nao_apaga.py</span>.
+            </div></td></tr>
+      <tr><td>Envio de e-mail</td>
+          <td><strong>{{ 'automático' if envia_email | default(false) else 'só rascunho' }}</strong>
+            <div style="color:var(--suave);font-size:.76rem">
+              {% if envia_email | default(false) %}
+                A etapa de e-mail despacha pelo Outlook, sem pedir confirmação.
+                Cada fatura só sai uma vez: reenviar exige reabrir a etapa.
+                Para voltar a só rascunhar, mude
+                <span class="mono">email.enviar_automaticamente</span> para
+                <span class="mono">false</span>.
+              {% else %}
+                A automação só cria rascunho. Quem clica em enviar é você.
+              {% endif %}
+            </div></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>E-mail para o financeiro</h2>
+<div class="cartao">
+  <div class="linha-par">
+    <label for="email_para">Para</label>
+    <div>
+      <input id="email_para" name="email_para" value="{{ email_para_editavel | default('') }}"
+             autocomplete="off"
+             placeholder="Nome &lt;endereco@empresa.com.br&gt;; outro@empresa.com.br">
+      <div class="apoio-campo">separe por <span class="mono">;</span> — pelo menos um</div>
+    </div>
+  </div>
+  <div class="linha-par">
+    <label for="email_copia">Cópia</label>
+    <div>
+      <input id="email_copia" name="email_copia" value="{{ email_copia_editavel | default('') }}"
+             autocomplete="off">
+      <div class="apoio-campo">deixe em branco para não copiar ninguém</div>
+    </div>
+  </div>
+  <div class="linha-par">
+    <label for="email_assunto">Assunto</label>
+    <div>
+      <input id="email_assunto" name="email_assunto"
+             value="{{ ambiente.email.get('assunto') or '' }}">
+      <div class="apoio-campo">
+        aceita <span class="mono">{empresa}</span> e
+        <span class="mono">{competencia_extenso}</span>
+      </div>
+    </div>
+  </div>
+  <div class="linha-par">
+    <label for="outlook_janela_dias">Janela de busca</label>
+    <div>
+      <input id="outlook_janela_dias" name="outlook_janela_dias" style="width:6rem"
+             inputmode="numeric" value="{{ ambiente.outlook.get('janela_dias', 45) }}">
+      <div class="apoio-campo">dias para trás que a varredura do Outlook cobre</div>
+    </div>
+  </div>
+
+  <div style="margin-top:.9rem">
+    <label for="email_corpo">Corpo padrão</label>
+    <textarea id="email_corpo" name="email_corpo" rows="12"
+              class="area-texto">{{ ambiente.email.get('corpo') or '' }}</textarea>
+    <div class="apoio-campo">
+      Disponíveis: <span class="mono">{empresa}</span>
+      <span class="mono">{competencia_extenso}</span>
+      <span class="mono">{vencimento}</span> <span class="mono">{valor}</span>
+      <span class="mono">{trecho_cidade}</span>
+    </div>
+  </div>
+
+  <div style="margin-top:.9rem">
+    <label for="email_corpo_agrupado">Corpo do e-mail agrupado (Algar)</label>
+    <textarea id="email_corpo_agrupado" name="email_corpo_agrupado" rows="12"
+              class="area-texto">{{ ambiente.email.get('corpo_agrupado') or '' }}</textarea>
+    <div class="apoio-campo">
+      Usado quando várias faturas do mesmo fornecedor viram um e-mail só.
+      Disponíveis: <span class="mono">{empresa}</span>
+      <span class="mono">{competencia_extenso}</span>
+      <span class="mono">{lista_faturas}</span>
+      <span class="mono">{valor_total}</span>
+    </div>
+  </div>
+
+  <p class="explica" style="margin:.9rem 0 0">
+    Estes são os valores padrão. Na etapa do e-mail dá para trocar
+    destinatário, cópia, assunto e texto só naquela mensagem, sem mexer aqui.
+  </p>
+</div>
+
+<div class="barra-acoes" style="position:sticky;bottom:0;background:var(--fundo);
+            padding:.7rem 0;border-top:1px solid var(--borda);z-index:5">
+  <button class="principal" type="submit">Salvar parâmetros</button>
+  <span class="mono" style="color:var(--suave);font-size:.78rem;align-self:center">
+    grava em {{ arquivo_settings }} · cópia do anterior em dados/backups/ ·
+    nada é escrito no OneDrive
+  </span>
+</div>
+</form>
+{% endif %}
+
+<h2>Montagem do PDF e checklist</h2>
+<div class="cartao">
+  <table class="par">
+    <tbody>
+      <tr><td>Ordem das páginas</td>
+          <td class="valor mono">{{ ordem_pdf }}</td></tr>
+      <tr><td>Cor de "enviado" no checklist</td>
+          <td>
+            <span class="mono">{{ cor_checklist }}</span>
+            <span style="display:inline-block;width:2.4rem;height:1rem;
+                         vertical-align:middle;margin-left:.4rem;border-radius:3px;
+                         border:1px solid var(--borda);
+                         background:#{{ cor_checklist[2:] if cor_checklist|length == 8 else cor_checklist }}"></span>
+          </td></tr>
+      <tr><td>Alerta de vencimento</td>
+          <td>{{ DIAS_DE_ALERTA }} dias antes</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Cadastros</h2>
+<div class="cartao">
+  <table class="par">
+    <tbody>
+      {% for rotulo, quantidade, arquivo, destino in cadastros %}
+      <tr>
+        <td>{{ rotulo }}</td>
+        <td class="valor">
+          <strong>{{ quantidade }}</strong> registro(s)
+          <span class="mono" style="color:var(--suave)"> · {{ arquivo }}</span>
+          {% if destino %}
+            <a href="{{ destino }}?competencia={{ competencia }}"
+               style="margin-left:.5rem;font-size:.82rem">abrir</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="barra-acoes">
+  <form class="linha" method="post" action="/recarregar">
+    <input type="hidden" name="competencia" value="{{ competencia }}">
+    <button title="Relê os arquivos de configuração sem fechar o painel">
+      ↻ Recarregar configuração
+    </button>
+  </form>
+  <a class="botao" href="/diagnostico?competencia={{ competencia }}">
+    Diagnóstico do ambiente
+  </a>
+  <span class="mono" style="color:var(--suave);font-size:.78rem;align-self:center">
+    o diagnóstico testa Excel, Outlook e acesso aos caminhos
+  </span>
+</div>
+{% endblock %}

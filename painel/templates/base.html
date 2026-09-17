@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Automação Financeira{% endblock %}</title>
+{% if tem_icone | default(false) %}
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+{% endif %}
+<script>
+  /* Aplica o tema salvo ANTES da primeira pintura. Se isto fosse no fim da
+     página, quem usa o tema escuro veria um lampejo branco a cada clique. */
+  (function () {
+    try {
+      var salvo = localStorage.getItem("af-tema");
+      if (salvo === "claro" || salvo === "escuro") {
+        document.documentElement.setAttribute("data-tema", salvo);
+      }
+    } catch (e) { /* navegador sem localStorage: segue o tema do sistema */ }
+  })();
+</script>
+<style>
+  :root{
+    --fundo:#f6f7f9; --papel:#fff; --borda:#e3e6ea; --texto:#1c2024;
+    --suave:#697077; --acento:#1f5fa9; --acento-fraco:#eaf1fa;
+    --ok:#1a7f43; --ok-fraco:#e6f4ec;
+    --atencao:#9a6300; --atencao-fraco:#fdf3e0;
+    --erro:#b3261e; --erro-fraco:#fdecea;
+    --pendente:#5b6169; --pendente-fraco:#eef0f2;
+    --pulado:#5b6169; --pulado-fraco:#f2f2f2;
+    /* Um degrau mais escuro que o cartão comum. É o fundo do bloco de
+       fechamento: ele encerra a lista, então não pode competir com ela. */
+    --fundo-forte:#e7ebef; --borda-forte:#d2d8de;
+  }
+  /* Três estados de tema, nesta ordem de precedência:
+       1. :root                        — claro, o padrão;
+       2. sistema no escuro            — vale, a menos que a pessoa tenha
+                                         escolhido claro na chave;
+       3. [data-tema] explícito        — a escolha da chave vence sempre.
+     Os valores escuros aparecem duas vezes de propósito: CSS não deixa dar
+     um nome a um par de seletores, e um bloco só não cobre os dois casos. */
+  @media (prefers-color-scheme: dark){
+    :root:not([data-tema="claro"]){
+      --fundo:#14171a; --papel:#1c2024; --borda:#2c3238; --texto:#e6e8ea;
+      --suave:#9aa3ab; --acento:#6fa8e8; --acento-fraco:#1a2836;
+      --ok:#5cc98a; --ok-fraco:#16301f;
+      --atencao:#e0a94a; --atencao-fraco:#33280f;
+      --erro:#f08a82; --erro-fraco:#331917;
+      --pendente:#9aa3ab; --pendente-fraco:#23282d;
+      --pulado:#9aa3ab; --pulado-fraco:#23282d;
+      --fundo-forte:#0d1014; --borda-forte:#333a41;
+    }
+  }
+  :root[data-tema="escuro"]{
+      --fundo:#14171a; --papel:#1c2024; --borda:#2c3238; --texto:#e6e8ea;
+      --suave:#9aa3ab; --acento:#6fa8e8; --acento-fraco:#1a2836;
+      --ok:#5cc98a; --ok-fraco:#16301f;
+      --atencao:#e0a94a; --atencao-fraco:#33280f;
+      --erro:#f08a82; --erro-fraco:#331917;
+      --pendente:#9aa3ab; --pendente-fraco:#23282d;
+      --pulado:#9aa3ab; --pulado-fraco:#23282d;
+      --fundo-forte:#0d1014; --borda-forte:#333a41;
+  }
+  /* Trocar de tema não é animação: sem isto, cada cor faz sua própria
+     transição e a tela inteira pisca em tempos diferentes. */
+  :root.trocando-tema *{transition:none !important}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fundo);color:var(--texto);
+    font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+  a{color:var(--acento)}
+  header{background:var(--papel);border-bottom:1px solid var(--borda);
+    padding:.7rem 1.2rem;display:flex;gap:1.2rem;align-items:center;
+    flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  header .marca{font-weight:650;letter-spacing:-.01em;text-decoration:none;
+    color:var(--texto);display:inline-flex;align-items:center;gap:.55rem}
+  /* Duas artes da marca, uma por tema: no claro o "gol" é azul-marinho; no
+     escuro ele é branco, e o laranja do "plus" continua laranja nos dois.
+     Trocar de arquivo em vez de inverter a imagem inteira é o que preserva
+     o laranja — inverter apagaria a segunda cor junto. */
+  header .marca img{height:26px;width:auto;display:block}
+  header .marca .logo-escura{display:none}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-tema="claro"]) header .marca .logo-clara{display:none}
+    :root:not([data-tema="claro"]) header .marca .logo-escura{display:block}
+  }
+  :root[data-tema="escuro"] header .marca .logo-clara{display:none}
+  :root[data-tema="escuro"] header .marca .logo-escura{display:block}
+  header .marca .nome{font-size:.95rem}
+  @media (max-width: 900px){ header .marca .nome{display:none} }
+  /* Marca, menu, meses e chave não cabem numa linha só em tela estreita —
+     e como os itens do menu não encolhem, o que sobra invade o vizinho.
+     Antes de chegar a esse ponto, o menu desce para uma linha própria. */
+  @media (max-width: 1250px){
+    header{row-gap:.5rem}
+    header .marca,header .canto-direito{flex:0 1 auto}
+    header nav{order:3;flex:1 1 100%}
+    header nav a.ativo::after,header nav .rotulo-menu.ativo::after{bottom:-.3rem}
+  }
+  /* O menu ocupa o centro do cabeçalho. A marca e o canto direito ficam
+     nas pontas com a MESMA largura mínima, senão o centro do nav escorrega
+     para o lado do elemento mais largo. */
+  header .marca,header .canto-direito{flex:1 1 0;min-width:0}
+  header .canto-direito{display:flex;gap:.6rem;align-items:center;
+    justify-content:flex-end}
+  header .seletor-mes{display:flex;gap:.25rem;justify-content:flex-end}
+
+  .conta-logada>summary{font-size:.82rem;white-space:nowrap}
+  .conta-logada .submenu-flutuante{right:0;left:auto;transform:none}
+  /* Único link do cabeçalho enquanto a senha inicial não foi trocada. Fica
+     fora do menu de navegação, então não herda o estilo dos itens dele. */
+  .sair-trancado{text-decoration:none;color:var(--suave);font-size:.82rem;
+    white-space:nowrap;padding:.35rem .7rem;border-radius:7px;
+    border:1px solid transparent}
+  .sair-trancado:hover{color:var(--acento);background:var(--acento-fraco)}
+
+  /* ---------- chave de tema ---------- */
+  .chave-tema{
+    flex:none;width:2rem;height:2rem;padding:0;
+    display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid var(--borda);border-radius:7px;
+    background:var(--fundo);color:var(--suave);cursor:pointer}
+  .chave-tema:hover{border-color:var(--acento);color:var(--acento)}
+  .chave-tema svg{width:1rem;height:1rem;display:block}
+  /* Sol quando está escuro (clique para clarear), lua quando está claro. */
+  .chave-tema .sol{display:none}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-tema="claro"]) .chave-tema .sol{display:block}
+    :root:not([data-tema="claro"]) .chave-tema .lua{display:none}
+  }
+  :root[data-tema="escuro"] .chave-tema .sol{display:block}
+  :root[data-tema="escuro"] .chave-tema .lua{display:none}
+  header nav{display:flex;gap:.3rem;flex-wrap:wrap;justify-content:center}
+  header nav a,header nav .rotulo-menu{
+    text-decoration:none;color:var(--suave);font-size:.9rem;
+    padding:.35rem .7rem;border-radius:7px;
+    border:1px solid transparent;position:relative;
+    display:inline-flex;align-items:center;gap:.3rem;
+    transition:color .12s,background .12s,border-color .12s}
+  header nav a:hover,header nav .rotulo-menu:hover{
+    color:var(--acento);background:var(--acento-fraco)}
+  /* A aba aberta fica acesa: cor, fundo, contorno e um traço embaixo. */
+  header nav a.ativo,header nav .rotulo-menu.ativo{
+    color:var(--acento);background:var(--acento-fraco);
+    border-color:var(--acento);font-weight:600}
+  header nav a.ativo::after,header nav .rotulo-menu.ativo::after{
+    content:"";position:absolute;left:.7rem;right:.7rem;bottom:-.72rem;
+    height:2px;background:var(--acento);border-radius:2px}
+
+  /* ---------- submenu flutuante ---------- */
+  .menu-com-filhos{position:relative}
+  .menu-com-filhos>summary{list-style:none;cursor:pointer;user-select:none}
+  .menu-com-filhos>summary::-webkit-details-marker{display:none}
+  .menu-com-filhos .seta{font-size:.6rem;opacity:.75;transition:transform .12s}
+  .menu-com-filhos[open] .seta{transform:rotate(180deg)}
+  .submenu-flutuante{
+    position:absolute;top:calc(100% + .5rem);left:50%;transform:translateX(-50%);
+    z-index:30;min-width:15rem;padding:.35rem;
+    display:flex;flex-direction:column;gap:.1rem;
+    background:var(--papel);border:1px solid var(--borda);border-radius:10px;
+    box-shadow:0 12px 34px rgba(0,0,0,.18)}
+  .submenu-flutuante a{
+    white-space:nowrap;border-radius:6px;padding:.42rem .6rem;
+    font-size:.86rem;color:var(--texto);text-decoration:none}
+  .submenu-flutuante a .apoio{
+    display:block;font-size:.72rem;color:var(--suave);font-weight:400}
+  .submenu-flutuante a.ativo::after{display:none}
+  /* Em tela estreita o menu fica perto da borda e a caixa centralizada
+     escapava 20px para fora. Soltando o `position` do item, o `absolute`
+     passa a valer contra o <header>, e aí dá para prender nas duas margens. */
+  @media (max-width: 620px){
+    .menu-com-filhos{position:static}
+    .submenu-flutuante{left:.75rem;right:.75rem;transform:none;min-width:0}
+  }
+  main{max-width:1180px;margin:0 auto;padding:1.4rem 1.2rem 4rem}
+  h1{font-size:1.4rem;margin:0 0 .3rem;letter-spacing:-.02em}
+  h2{font-size:1.05rem;margin:1.8rem 0 .6rem;letter-spacing:-.01em}
+  h3{font-size:.9rem;margin:1.2rem 0 .4rem;color:var(--suave);
+    text-transform:uppercase;letter-spacing:.04em}
+  .sub{color:var(--suave);font-size:.9rem;margin:0 0 1.2rem}
+
+  .aviso{padding:.7rem .9rem;border-radius:7px;font-size:.88rem;
+    margin-bottom:1rem;border:1px solid transparent}
+  .aviso.simulacao{background:var(--acento-fraco);border-color:var(--acento);
+    color:var(--texto)}
+  .aviso.perigo{background:var(--erro-fraco);border-color:var(--erro)}
+  .aviso.alerta{background:var(--atencao-fraco);border-color:var(--atencao)}
+
+  .cartao{background:var(--papel);border:1px solid var(--borda);
+    border-radius:9px;padding:1rem 1.1rem;margin-bottom:1rem}
+  .cartao.compacto{padding:.7rem .9rem}
+
+  table{width:100%;border-collapse:collapse;font-size:.88rem}
+  th{text-align:left;font-weight:600;color:var(--suave);font-size:.76rem;
+    text-transform:uppercase;letter-spacing:.04em;padding:.45rem .5rem;
+    border-bottom:1px solid var(--borda);white-space:nowrap}
+  td{padding:.5rem;border-bottom:1px solid var(--borda);vertical-align:middle}
+  tbody tr:hover{background:var(--acento-fraco)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+
+  .pastilha{display:inline-block;padding:.12rem .45rem;border-radius:20px;
+    font-size:.72rem;font-weight:600;white-space:nowrap}
+  .ok{background:var(--ok-fraco);color:var(--ok)}
+  .atencao{background:var(--atencao-fraco);color:var(--atencao)}
+  .erro{background:var(--erro-fraco);color:var(--erro)}
+  .pendente{background:var(--pendente-fraco);color:var(--pendente)}
+  .pulado{background:var(--pulado-fraco);color:var(--pulado)}
+
+  .trilha{display:flex;gap:3px}
+  .trilha span{width:15px;height:7px;border-radius:2px;background:var(--pendente-fraco)}
+  .trilha span.ok{background:var(--ok)}
+  .trilha span.atencao{background:var(--atencao)}
+  .trilha span.erro{background:var(--erro)}
+  .trilha span.pulado{background:var(--pulado-fraco);
+    box-shadow:inset 0 0 0 1px var(--borda)}
+
+  button,.botao{font:inherit;font-size:.85rem;padding:.4rem .8rem;border-radius:6px;
+    border:1px solid var(--borda);background:var(--papel);color:var(--texto);
+    cursor:pointer;text-decoration:none;display:inline-block}
+  button:hover,.botao:hover{border-color:var(--acento);color:var(--acento)}
+  button.principal{background:var(--acento);border-color:var(--acento);color:#fff}
+  button.principal:hover{filter:brightness(1.1);color:#fff}
+  button.perigo{background:var(--erro);border-color:var(--erro);color:#fff}
+  button.perigo:hover{filter:brightness(1.1);color:#fff}
+  button.discreto{border-color:transparent;color:var(--suave);padding:.25rem .5rem}
+  /* Interruptor redondo (Faturas ativas, Permissões): marcado = círculo verde inteiro, com o "certo".
+     Não existe mais bolinha no meio para desalinhar — o que preenche é o
+     próprio fundo, e o "certo" é um SVG esticado em 100% da caixa. Sem
+     posicionamento relativo, sem pseudo-elemento dentro de <input>, sem
+     dependência de subpixel: nada para sair do lugar. */
+  .interruptor{
+    appearance:none;-webkit-appearance:none;
+    box-sizing:border-box;margin:0;padding:0;
+    width:20px;height:20px;border-radius:50%;
+    border:2px solid var(--borda);
+    background-color:transparent;
+    background-repeat:no-repeat;
+    background-position:center;
+    background-size:100% 100%;
+    display:inline-block;vertical-align:middle;cursor:pointer;
+    transition:border-color .15s,background-color .15s,box-shadow .15s}
+  .interruptor:checked{
+    border-color:var(--ok);
+    background-color:var(--ok);
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.6 10.4l2.9 2.9 5.9-6.4' fill='none' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+  .interruptor:hover{border-color:var(--ok)}
+  .interruptor:checked:hover{filter:brightness(1.12)}
+  .interruptor:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ok-fraco)}
+  @media (prefers-reduced-motion: reduce){
+    .interruptor{transition:none}
+  }
+
+  /* Botão que apaga fica vermelho ao passar o mouse: o vermelho só no clique
+     seguinte (o confirm) chega tarde demais para quem mirou errado. */
+  button.remover:hover{color:var(--erro);border-color:var(--erro);
+    background:var(--erro-fraco)}
+
+  form.linha{display:inline}
+  .campos{display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end}
+  label{display:block;font-size:.76rem;color:var(--suave);margin-bottom:.2rem;
+    text-transform:uppercase;letter-spacing:.03em}
+  input,select{font:inherit;font-size:.88rem;padding:.35rem .5rem;
+    border:1px solid var(--borda);border-radius:6px;background:var(--fundo);
+    color:var(--texto)}
+  input:focus,select:focus{outline:2px solid var(--acento);outline-offset:-1px}
+
+  .seletor-mes{display:flex;gap:.3rem;align-items:center}
+  .seletor-mes a{padding:.25rem .6rem;border-radius:6px;text-decoration:none;
+    font-size:.82rem;color:var(--suave)}
+  .seletor-mes a.ativo{background:var(--acento);color:#fff}
+
+  .etapa{display:grid;grid-template-columns:1.5rem 11rem 1fr auto;gap:.7rem;
+    align-items:start;padding:.6rem 0;border-bottom:1px solid var(--borda)}
+  .etapa:last-child{border-bottom:0}
+  .etapa .indice{color:var(--suave);font-size:.8rem;
+    font-variant-numeric:tabular-nums}
+  .etapa .nome{font-weight:550;font-size:.88rem}
+  .etapa .msg{color:var(--suave);font-size:.84rem;min-width:0;
+    overflow-wrap:anywhere}
+  .etapa .msg ul{margin:.35rem 0 0;padding-left:1.1rem}
+  .etapa .msg li{margin:.1rem 0}
+  .cadeado{font-size:.7rem;color:var(--atencao);font-weight:600}
+
+  .mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;
+    font-size:.8rem;color:var(--suave);overflow-wrap:anywhere}
+  .vazio{color:var(--suave);font-size:.9rem;padding:1.4rem;text-align:center}
+  .rolagem{overflow-x:auto}
+  .barra-acoes{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem}
+
+  /* ---------- assistente passo a passo ---------- */
+  .trilha-passos{display:flex;gap:.3rem;overflow-x:auto;padding:.2rem 0 .5rem}
+  .passo{flex:1 1 0;min-width:82px;text-decoration:none;text-align:center;
+    padding:.5rem .3rem;border-radius:8px;border:1px solid var(--borda);
+    background:var(--papel);display:flex;flex-direction:column;gap:.3rem;
+    align-items:center}
+  .passo .bolha{width:26px;height:26px;border-radius:50%;display:grid;
+    place-items:center;font-size:.8rem;font-weight:650;
+    background:var(--pendente-fraco);color:var(--pendente)}
+  .passo .titulo{font-size:.7rem;line-height:1.25;color:var(--suave)}
+  .passo.feita .bolha{background:var(--ok);color:#fff}
+  .passo.feita .titulo{color:var(--texto)}
+  .passo.atual{border-color:var(--acento);box-shadow:0 0 0 2px var(--acento-fraco)}
+  .passo.atual .bolha{background:var(--acento);color:#fff}
+  .passo.atual .titulo{color:var(--acento);font-weight:600}
+  .passo.travada{opacity:.5;cursor:not-allowed}
+
+  .palco{background:var(--papel);border:1px solid var(--borda);border-radius:11px;
+    min-height:62vh;display:flex;flex-direction:column}
+  .palco-topo{display:flex;justify-content:space-between;align-items:flex-start;
+    gap:1rem;padding:1.1rem 1.3rem;border-bottom:1px solid var(--borda)}
+  .palco-numero{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--suave);font-weight:600}
+  .palco-corpo{flex:1;padding:1.3rem;min-width:0}
+  .palco-acoes{display:flex;justify-content:space-between;align-items:center;
+    gap:1rem;padding:.9rem 1.3rem;border-top:1px solid var(--borda);
+    background:var(--fundo);border-radius:0 0 11px 11px;flex-wrap:wrap}
+  .explica{color:var(--suave);font-size:.9rem;margin:0 0 1rem;max-width:62ch}
+
+  .area-soltar{display:flex;flex-direction:column;gap:.35rem;align-items:center;
+    justify-content:center;padding:2.2rem 1rem;border:2px dashed var(--borda);
+    border-radius:10px;cursor:pointer;text-align:center;background:var(--fundo);
+    transition:border-color .15s,background .15s}
+  .area-soltar:hover,.area-soltar.sobre{border-color:var(--acento);
+    background:var(--acento-fraco)}
+  .escolhidos{font-size:.82rem;color:var(--acento);font-weight:600}
+  .soltar button{margin-top:.8rem}
+  .lista-arquivos{margin:.3rem 0 0;padding-left:1.1rem}
+
+  /* ---------- fila de envio (montada pelo JS) ---------- */
+  .fila-envio{list-style:none;margin:.8rem 0 0;padding:0;
+    display:flex;flex-direction:column;gap:.35rem}
+  .item-envio{display:flex;align-items:center;gap:.6rem;min-width:0;
+    padding:.45rem .6rem;border:1px solid var(--borda);border-radius:8px;
+    background:var(--papel);font-size:.85rem}
+  .item-envio.erro{border-color:var(--erro);background:var(--erro-fraco)}
+  .item-envio.atencao{border-color:var(--atencao);background:var(--atencao-fraco)}
+  .item-envio .tipo{flex:none;width:2.9rem;text-align:center;font-size:.66rem;
+    font-weight:700;letter-spacing:.04em;padding:.2rem 0;border-radius:4px;
+    background:var(--acento-fraco);color:var(--acento)}
+  .item-envio.erro .tipo{background:var(--papel);color:var(--erro)}
+  .item-envio .nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .item-envio .peso{flex:none;color:var(--suave);font-size:.76rem;
+    font-variant-numeric:tabular-nums}
+  .item-envio .pastilha{flex:none}
+  .item-envio .tirar{flex:none;padding:.1rem .4rem;line-height:1;
+    border-color:transparent;color:var(--suave);background:none}
+  .item-envio .tirar:hover{color:var(--erro);border-color:var(--erro)}
+  .recado-fila{margin:.6rem 0 0;font-size:.84rem;font-weight:550}
+  .recado-fila.ok{color:var(--ok)}
+  .recado-fila.erro{color:var(--erro)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button:disabled:hover{border-color:var(--borda);color:inherit}
+  button.principal:disabled:hover{color:#fff}
+
+  /* ---------- formulário do e-mail ---------- */
+  .bloco-email{max-width:70ch}
+  .bloco-email input,.bloco-email textarea{width:100%;box-sizing:border-box;
+    margin-bottom:.7rem}
+  .bloco-email textarea{font:inherit;font-size:.88rem;line-height:1.5;
+    resize:vertical;min-height:9rem;padding:.5rem .6rem;border-radius:6px;
+    border:1px solid var(--borda);background:var(--fundo);color:var(--texto)}
+  .dica-campo{margin:-.4rem 0 .8rem;font-size:.75rem;color:var(--suave)}
+
+  /* ---------- visualizador de PDF ---------- */
+  .visor{margin-top:1rem;border:1px solid var(--borda);border-radius:10px;
+    overflow:hidden;background:var(--papel)}
+  .visor-topo{display:flex;justify-content:space-between;align-items:center;
+    gap:.8rem;flex-wrap:wrap;padding:.55rem .8rem;background:var(--fundo);
+    border-bottom:1px solid var(--borda);font-size:.84rem}
+  .visor-topo .botao{padding:.25rem .6rem;font-size:.8rem}
+  .visor iframe{display:block;width:100%;height:min(78vh,900px);border:0;
+    background:#525659}
+
+  /* ---------- origem do dado na etapa da autorização ---------- */
+  .origem-campo{display:block;margin-top:.25rem;font-size:.72rem;
+    color:var(--suave);max-width:14rem}
+  .origem-campo.estimado{color:var(--atencao)}
+  input.editado,textarea.editado{border-color:var(--acento);
+    box-shadow:0 0 0 2px var(--acento-fraco)}
+  .campos textarea{width:100%;box-sizing:border-box;font:inherit;
+    font-size:.88rem;line-height:1.5;resize:vertical;padding:.4rem .55rem;
+    border:1px solid var(--borda);border-radius:6px;background:var(--fundo);
+    color:var(--texto)}
+  .resultado.antigo{opacity:.45}
+
+  .resultado{margin-top:1.2rem;padding:.8rem 1rem;border-radius:8px;
+    border:1px solid var(--borda);font-size:.88rem}
+  .resultado.ok{background:var(--ok-fraco);border-color:var(--ok)}
+  .resultado.atencao{background:var(--atencao-fraco);border-color:var(--atencao)}
+  .resultado.erro{background:var(--erro-fraco);border-color:var(--erro)}
+  .resultado.pendente{background:var(--acento-fraco);border-color:var(--acento)}
+  .resultado ul{margin:.35rem 0 0;padding-left:1.1rem}
+  .rotulo-bloco{margin-top:.5rem;font-weight:600;font-size:.82rem}
+  .previa-email{margin-top:.5rem;padding:.6rem .7rem;background:var(--papel);
+    border:1px solid var(--borda);border-radius:6px}
+  .previa-email pre{white-space:pre-wrap;margin:.5rem 0 0;font:inherit;font-size:.84rem}
+  .manual summary{cursor:pointer;font-size:.82rem;color:var(--suave);
+    padding:.4rem .6rem;list-style:none}
+  .manual summary:hover{color:var(--acento)}
+  .manual form{display:flex;gap:.4rem;margin-top:.4rem}
+  .principal-link{background:var(--acento);border-color:var(--acento);color:#fff}
+  .principal-link:hover{filter:brightness(1.1);color:#fff}
+
+  /* ---------- tela de carregamento ---------- */
+  #carregando{position:fixed;inset:0;z-index:100;display:none;
+    place-items:center;background:color-mix(in srgb,var(--fundo) 88%,transparent);
+    backdrop-filter:blur(3px)}
+  #carregando.ativo{display:grid}
+  #carregando .caixa{background:var(--papel);border:1px solid var(--borda);
+    border-radius:12px;padding:1.6rem 2rem;text-align:center;min-width:270px;
+    box-shadow:0 12px 40px rgba(0,0,0,.16)}
+  #carregando .roda{width:34px;height:34px;margin:0 auto .8rem;border-radius:50%;
+    border:3px solid var(--borda);border-top-color:var(--acento);
+    animation:girar .8s linear infinite}
+  @keyframes girar{to{transform:rotate(360deg)}}
+  #carregando .rotulo{font-weight:600;font-size:.95rem}
+  #carregando .dica{color:var(--suave);font-size:.82rem;margin-top:.35rem}
+  @media (prefers-reduced-motion: reduce){
+    #carregando .roda{animation-duration:2.4s}
+  }
+</style>
+</head>
+<body>
+{#
+  O Jinja recarrega o template do disco a cada requisição; o app.py fica como
+  estava quando o processo subiu. Atualizar o projeto com o painel aberto
+  produz tela nova sobre servidor velho — e o sintoma engana: link novo devolve
+  {"detail":"Not Found"}, variável nova derruba a página com erro interno.
+
+  `PAGANTES` só existe nas versões que têm as telas de cadastro. Serve de
+  sinal: sem ela, o painel no ar é anterior a elas.
+#}
+{% set painel_velho = PAGANTES is not defined
+                      or codigo_desatualizado | default(false) %}
+{#
+  Enquanto a senha inicial não for trocada, o middleware manda qualquer tela
+  de volta para /trocar-senha. Exibir o menu seria oferecer sete links que
+  não levam a lugar nenhum — e dar a impressão de que já se está dentro do
+  painel. Fica só a marca, o tema e a saída.
+#}
+{% set trancado = usuario_logado and usuario_logado.precisa_trocar_senha %}
+<header>
+  <a class="marca" href="{{ '/trocar-senha' if trancado
+                            else '/?competencia=' ~ competencia }}"
+     title="Automação Financeira — voltar para as contas do mês">
+    {% if tem_logo | default(false) %}
+      {# alt genérico de propósito: o arquivo da logo fica fora do git, mas o
+         template vai junto — e o nome da empresa não precisa viajar nele. #}
+      <img class="logo-clara" src="/static/logo.png" alt="Logomarca">
+      {# Sem a arte escura no disco, o tema escuro repete a clara — a marca
+         fica difícil de ler, mas nada quebra. Rode scripts/extrair_logo.py. #}
+      <img class="logo-escura" alt="Logomarca"
+           src="/static/{{ 'logo-escura.png' if tem_logo_escura | default(false) else 'logo.png' }}">
+    {% endif %}
+    <span class="nome">Automação Financeira</span>
+  </a>
+  {#
+    A aba da página aberta fica acesa. 'Contas do mês' também acende quando
+    você está dentro de uma conta (/conta/...), porque é de lá que se chega.
+  #}
+  {% set caminho = request.url.path %}
+  {#
+    O menu mostra só o que o grupo da pessoa enxerga (automacao/acesso/permissoes.py).
+    Oferecer link que devolve "sem permissão" é pior que não oferecer: ela
+    clica, bate na parede e acha que o painel quebrou.
+
+    O default com tudo é para o servidor velho, que não manda esta variável —
+    nesse caso o menu volta a ser o de antes, que é o que o código no ar sabe
+    atender.
+  #}
+  {% set telas_visiveis = telas_visiveis | default([
+      'contas', 'entrada', 'auditoria', 'faturas', 'pagantes',
+      'beneficiarios', 'parametros', 'diagnostico', 'usuarios']) %}
+  {% set filhos_config = [
+      ('/configuracao', 'Faturas ativas', 'quais contas valem neste mês', 'faturas'),
+      ('/configuracao/pagantes', 'Pagantes', 'quem paga, com CNPJ', 'pagantes'),
+      ('/configuracao/beneficiarios', 'Beneficiários', 'quem recebe e dados bancários', 'beneficiarios'),
+      ('/configuracao/parametros', 'Parâmetros do sistema', 'caminhos, e-mail e travas', 'parametros'),
+      ('/configuracao/email', 'E-mail', 'sua assinatura e o seu texto padrão', 'email'),
+      ('/configuracao/manutencao', 'Manutenção', 'limpar a bancada do que já foi publicado', 'manutencao'),
+      ('/configuracao/usuarios', 'Usuários', 'quem entra no painel', 'usuarios'),
+      ('/configuracao/permissoes', 'Permissões', 'o que cada grupo enxerga', 'permissoes')
+      ] | selectattr('3', 'in', telas_visiveis) | list %}
+  {% if not trancado %}
+  <nav>
+    {% for href, rotulo, tela in [
+        ('/', 'Contas do mês', 'contas'),
+        ('/entrada', 'Entrada manual', 'entrada'),
+        ('/auditoria', 'Auditoria', 'auditoria')] %}
+      {% if tela in telas_visiveis %}
+      {% set aceso = caminho == href
+                     or (href != '/' and caminho.startswith(href))
+                     or (href == '/' and caminho.startswith('/conta/')) %}
+      <a href="{{ href }}?competencia={{ competencia }}"
+         class="{{ 'ativo' if aceso }}"
+         {% if aceso %}aria-current="page"{% endif %}>{{ rotulo }}</a>
+      {% endif %}
+    {% endfor %}
+
+    {# Configuração virou pasta: são seis telas, e enfileirar todas no topo
+       deixaria o menu maior que a tela. Grupo sem nenhuma delas não vê nem a
+       pasta — um menu que abre vazio é só um clique perdido. #}
+    {% set em_config = caminho.startswith('/configuracao') %}
+    {% if filhos_config %}
+    {% if painel_velho %}
+      {# Servidor antigo não tem as telas novas: oferecer o menu seria
+         entregar seis links que devolvem "Not Found". #}
+      <a href="/configuracao?competencia={{ competencia }}"
+         class="{{ 'ativo' if em_config }}">Configuração</a>
+    {% else %}
+    <details class="menu-com-filhos" {{ 'open' if false }}>
+      <summary class="rotulo-menu {{ 'ativo' if em_config }}"
+               {% if em_config %}aria-current="page"{% endif %}>
+        Configuração <span class="seta">▾</span>
+      </summary>
+      <div class="submenu-flutuante">
+        {% for href, rotulo, apoio, tela in filhos_config %}
+          {# Comparação exata: /configuracao é prefixo de todas as outras. #}
+          <a href="{{ href }}?competencia={{ competencia }}"
+             class="{{ 'ativo' if caminho == href }}">
+            {{ rotulo }}<span class="apoio">{{ apoio }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    {% endif %}
+
+    {% if 'diagnostico' in telas_visiveis %}
+    {% set em_diag = caminho.startswith('/diagnostico') %}
+    <a href="/diagnostico?competencia={{ competencia }}"
+       class="{{ 'ativo' if em_diag }}"
+       {% if em_diag %}aria-current="page"{% endif %}>Diagnóstico</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+  <div class="canto-direito">
+    {% if not trancado %}
+    <div class="seletor-mes">
+      {% for c in competencias %}
+        <a href="{{ request.url.path }}?competencia={{ c }}"
+           class="{{ 'ativo' if c == competencia else '' }}">{{ c.nome_mes[:3] }}/{{ c.ano }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if trancado %}
+      {# Sair continua à mão: sem isso, quem abriu a tela por engano ficaria
+         preso nela sem jeito de voltar ao login com outro usuário. #}
+      <a class="sair-trancado" href="/sair" title="{{ usuario_logado.email }}">Sair</a>
+    {% elif usuario_logado %}
+      <details class="menu-com-filhos conta-logada">
+        <summary class="rotulo-menu" title="{{ usuario_logado.email }}">
+          {{ (usuario_logado.nome or usuario_logado.email).split(' ')[0].split('@')[0] }}
+          <span class="seta">▾</span>
+        </summary>
+        <div class="submenu-flutuante">
+          <a href="/trocar-senha">Trocar a senha<span class="apoio">{{ usuario_logado.email }}</span></a>
+          <a href="/sair">Sair<span class="apoio">encerra esta sessão</span></a>
+        </div>
+      </details>
+    {% endif %}
+    <button type="button" class="chave-tema" id="chave-tema"
+            title="Alternar entre tema claro e escuro"
+            aria-label="Alternar entre tema claro e escuro">
+      <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+      </svg>
+      <svg class="lua" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>
+      </svg>
+    </button>
+  </div>
+</header>
+<main>
+  {% if painel_velho %}
+  <div class="aviso perigo">
+    <strong>O painel precisa ser reiniciado.</strong>
+    O código no disco é mais novo que o programa que está no ar. As telas já
+    são as novas, o servidor não — por isso alguns links devolvem
+    <span class="mono">Not Found</span> e algumas telas dão erro.
+    <div style="margin-top:.45rem">
+      Feche a janela preta do painel (<strong>Ctrl+C</strong> nela) e abra
+      <span class="mono">painel.bat</span> de novo. Se ela já foi fechada no X,
+      rode <span class="mono">parar-painel.bat</span> antes — o processo
+      sobrevive e segura a porta.
+    </div>
+  </div>
+  {% endif %}
+  {% if simulando %}
+  <div class="aviso simulacao">
+    <strong>Modo simulação ligado.</strong>
+    Nada é gravado no <strong>OneDrive</strong> nem na <strong>planilha
+    compartilhada</strong> — os arquivos ficam em
+    <span class="mono">dados/trabalho/</span> e a publicação só mostra o que
+    faria. O <strong>rascunho do e-mail é criado de verdade</strong> no seu
+    Outlook, para você conferir o texto e o anexo — e, enquanto a simulação
+    estiver ligada, ele <strong>não é despachado</strong>, mesmo com o envio
+    automático ligado.
+    Para liberar a gravação, mude <span class="mono">seguranca.simulacao</span>
+    para <span class="mono">false</span> em <span class="mono">config/settings.yaml</span>.
+  </div>
+  {% endif %}
+  {% block conteudo %}{% endblock %}
+</main>
+
+<div id="carregando" role="status" aria-live="polite" aria-hidden="true">
+  <div class="caixa">
+    <div class="roda"></div>
+    <div class="rotulo" id="carregando-rotulo">Processando…</div>
+    <div class="dica" id="carregando-dica">Isso pode levar alguns segundos.</div>
+  </div>
+</div>
+
+<script>
+/* Chave de tema.
+   O <html> já pode ter chegado com data-tema, posto pelo script do <head>.
+   Aqui só tratamos o clique: gravamos a escolha e trocamos o atributo.
+
+   A escolha fica no navegador (localStorage), não no servidor: é preferência
+   de quem está olhando a tela, e o painel roda para uma pessoa por máquina.
+   Sem escolha gravada, vale o tema do sistema operacional. */
+(function () {
+  const chave = document.getElementById('chave-tema');
+  if (!chave) return;
+
+  function escuroAgora() {
+    const marcado = document.documentElement.getAttribute('data-tema');
+    if (marcado) return marcado === 'escuro';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  chave.addEventListener('click', function () {
+    const proximo = escuroAgora() ? 'claro' : 'escuro';
+    const raiz = document.documentElement;
+    raiz.classList.add('trocando-tema');
+    raiz.setAttribute('data-tema', proximo);
+    try { localStorage.setItem('af-tema', proximo); } catch (e) {}
+    window.setTimeout(function () { raiz.classList.remove('trocando-tema'); }, 80);
+  });
+})();
+
+/* Submenu do cabeçalho.
+   <details> sozinho não fecha ao clicar fora — ficaria aberto por cima da
+   página inteira depois que a pessoa desiste. */
+(function () {
+  const menus = document.querySelectorAll('.menu-com-filhos');
+  if (!menus.length) return;
+
+  function fechar(exceto) {
+    menus.forEach(function (m) { if (m !== exceto) m.open = false; });
+  }
+  menus.forEach(function (menu) {
+    menu.addEventListener('toggle', function () { if (menu.open) fechar(menu); });
+  });
+  document.addEventListener('click', function (evento) {
+    if (!evento.target.closest('.menu-com-filhos')) fechar(null);
+  });
+  document.addEventListener('keydown', function (evento) {
+    if (evento.key === 'Escape') fechar(null);
+  });
+})();
+
+/* Tela de carregamento.
+   Toda ação do painel é um POST que pode demorar — o Excel leva de 10 a 20
+   segundos para abrir e exportar, e o Outlook às vezes mais. Sem aviso, o
+   clique parece não ter feito nada e a pessoa clica de novo. */
+(function () {
+  const tela = document.getElementById('carregando');
+  const rotulo = document.getElementById('carregando-rotulo');
+  const dica = document.getElementById('carregando-dica');
+  if (!tela) return;
+
+  const DICAS = {
+    coleta: 'Lendo os arquivos e identificando boleto, nota fiscal e demonstrativo.',
+    upload: 'Enviando os arquivos e classificando o conteúdo.',
+    autorizacao: 'Abrindo a planilha base e preenchendo os campos do mês.',
+    pdf_autorizacao: 'Abrindo o Excel para exportar em PDF — costuma levar de 10 a 20 segundos.',
+    pdf_final: 'Juntando autorização, demonstrativo, boleto e nota fiscal.',
+    publicacao: 'Copiando os arquivos para o OneDrive.',
+    email: 'Falando com o Outlook para montar e despachar a mensagem.',
+    checklist: 'Abrindo a planilha CONTAS E ACESSOS para marcar a linha.',
+  };
+
+  /* Depois deste tempo sem a página trocar, alguma coisa deu errado: o
+     servidor caiu, foi reiniciado, ou a etapa travou. Roda girando para
+     sempre não informa nada — pior, esconde a página que ainda funciona. */
+  const PACIENCIA_MS = 25000;
+  let desistir = null;
+
+  function mostrar(texto, chave) {
+    rotulo.textContent = texto || 'Processando…';
+    dica.textContent = DICAS[chave] || 'Isso pode levar alguns segundos.';
+    tela.classList.add('ativo');
+    tela.setAttribute('aria-hidden', 'false');
+
+    clearTimeout(desistir);
+    desistir = setTimeout(function () {
+      /* Confere se o painel ainda responde antes de acusar. */
+      fetch('/vivo', {cache: 'no-store'})
+        .then(function () { avisarDemora(false); })
+        .catch(function () { avisarDemora(true); });
+    }, PACIENCIA_MS);
+  }
+
+  function avisarDemora(painelMudo) {
+    rotulo.textContent = painelMudo
+      ? 'O painel parou de responder'
+      : 'Está demorando mais que o esperado';
+    dica.innerHTML = painelMudo
+      ? 'A janela preta do painel foi fechada ou o processo caiu. Abra o ' +
+        '<code>painel.bat</code> de novo e refaça a ação — nada foi gravado pela metade.'
+      : 'A ação pode ter concluído mesmo assim. Feche este aviso e recarregue ' +
+        'a página para conferir antes de tentar de novo.';
+    const botao = document.createElement('button');
+    botao.textContent = 'Fechar e recarregar';
+    botao.style.marginTop = '.9rem';
+    botao.addEventListener('click', function () { location.reload(); });
+    dica.appendChild(document.createElement('br'));
+    dica.appendChild(botao);
+  }
+
+  document.addEventListener('submit', function (evento) {
+    const form = evento.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.dataset.semCarregar !== undefined) return;
+
+    const acao = form.getAttribute('action') || '';
+    let chave = '';
+    let texto = 'Processando…';
+
+    if (acao.includes('/upload')) {
+      chave = 'upload'; texto = 'Enviando arquivos…';
+    } else if (acao.includes('/etapa/')) {
+      chave = acao.split('/etapa/')[1].split('/')[0].split('?')[0];
+      const passo = document.querySelector('.passo.atual .titulo');
+      texto = passo ? passo.textContent.trim() + '…' : 'Executando etapa…';
+    } else if (acao.includes('/preparar')) {
+      chave = 'coleta'; texto = 'Preparando a conta…';
+    } else if (acao.includes('/reabrir')) {
+      return;  // instantâneo, não vale piscar a tela
+    }
+
+    mostrar(texto, chave);
+  }, true);
+
+  /* Voltar pelo histórico não pode deixar a tela presa. */
+  window.addEventListener('pageshow', function () {
+    clearTimeout(desistir);
+    tela.classList.remove('ativo');
+    tela.setAttribute('aria-hidden', 'true');
+  });
+})();
+</script>
+</body>
+</html>

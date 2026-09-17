@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários{% endblock %}
+
+{% block conteudo %}
+{# Default para o caso do servidor velho com template novo: sem grupos, a
+   tela ainda abre e mostra o cadastro, só não deixa trocar o nível. #}
+{% set grupos = grupos | default([]) %}
+<style>
+  .tabela-usuarios td{vertical-align:middle}
+  .tabela-usuarios .eu{font-weight:600;color:var(--acento)}
+  .acoes-usuario{display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap}
+  .acoes-usuario form{margin:0}
+  /* O seletor de grupo grava sozinho ao mudar; o botão só aparece sem JS. */
+  .forma-grupo{display:flex;gap:.35rem;align-items:center;margin:0}
+  .forma-grupo select{min-width:9rem}
+  .novo-usuario{display:flex;gap:.7rem;flex-wrap:wrap;align-items:flex-end}
+  .novo-usuario>div{flex:1 1 12rem;min-width:0}
+  .novo-usuario input[type=text],
+  .novo-usuario input[type=email],
+  .novo-usuario select{width:100%;box-sizing:border-box}
+  .novo-usuario .campo-grupo{flex:0 1 13rem}
+</style>
+
+<h1>Usuários</h1>
+<p class="sub">
+  Quem pode abrir o painel. A senha nunca é guardada — fica só o resumo dela,
+  e não há como voltar atrás a partir dele. Esqueceu? Redefina aqui: a pessoa
+  volta para a senha provisória e escolhe uma nova ao entrar.
+</p>
+
+{% if erro %}<div class="aviso perigo">{{ erro }}</div>{% endif %}
+{% if guardado %}<div class="aviso">{{ guardado }}</div>{% endif %}
+
+<div class="cartao rolagem">
+  <table class="tabela-usuarios">
+    <thead>
+      <tr>
+        <th>E-mail</th>
+        <th>Nome</th>
+        <th>Permissão</th>
+        <th>Situação</th>
+        <th>Último acesso</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in usuarios %}
+      {% set sou_eu = usuario_logado and u.email == usuario_logado.email %}
+      <tr>
+        <td class="mono {{ 'eu' if sou_eu }}">
+          {{ u.email }}{% if sou_eu %} · você{% endif %}
+        </td>
+        <td>{{ u.nome or '—' }}</td>
+        <td>
+          {% if grupos %}
+            {# Um formulário por linha: o POST leva só o e-mail daquela pessoa,
+               então um clique errado não reclassifica a lista inteira. #}
+            <form class="forma-grupo" method="post"
+                  action="/configuracao/usuarios/grupo">
+              <input type="hidden" name="email" value="{{ u.email }}">
+              <select name="grupo" aria-label="Permissão de {{ u.email }}"
+                      onchange="this.form.submit()">
+                {% for g in grupos %}
+                  <option value="{{ g.chave }}"
+                          {{ 'selected' if g.chave == u.grupo }}>{{ g.nome }}</option>
+                {% endfor %}
+              </select>
+              <noscript><button class="discreto" type="submit">trocar</button></noscript>
+            </form>
+          {% elif u.administrador %}
+            <span class="pastilha ok">administrador</span>
+          {% else %}
+            <span class="pastilha pendente">usuário</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.precisa_trocar_senha %}
+            <span class="pastilha atencao" title="Entra e é obrigado a trocar a senha">
+              senha provisória</span>
+          {% elif not u.ativo %}
+            <span class="pastilha erro">inativo</span>
+          {% else %}
+            <span class="pastilha ok">ativo</span>
+          {% endif %}
+        </td>
+        <td class="mono">{{ u.ultimo_acesso[:16].replace('T', ' ') if u.ultimo_acesso else 'nunca entrou' }}</td>
+        <td>
+          <div class="acoes-usuario">
+            <form method="post" action="/configuracao/usuarios/redefinir"
+                  onsubmit="return confirm('Redefinir a senha de {{ u.email }} para a provisória?\n\nA senha atual será perdida — não há como recuperá-la.');">
+              <input type="hidden" name="email" value="{{ u.email }}">
+              <button class="discreto" type="submit">Redefinir senha</button>
+            </form>
+            {% if not sou_eu %}
+              <form method="post" action="/configuracao/usuarios/remover"
+                    onsubmit="return confirm('Remover {{ u.email }} do painel?');">
+                <input type="hidden" name="email" value="{{ u.email }}">
+                <button class="discreto remover" type="submit"
+                        title="Remover do painel">🗑</button>
+              </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="vazio">Nenhum usuário cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3>Cadastrar usuário</h3>
+<div class="cartao">
+  <form class="novo-usuario" method="post" action="/configuracao/usuarios/novo">
+    <div>
+      <label for="email">E-mail</label>
+      <input id="email" name="email" type="email" required
+             placeholder="nome@empresa.com.br" autocomplete="off">
+    </div>
+    <div>
+      <label for="nome">Nome</label>
+      <input id="nome" name="nome" type="text" placeholder="como aparece na tela"
+             autocomplete="off">
+    </div>
+    <div class="campo-grupo">
+      <label for="grupo">Permissão</label>
+      <select id="grupo" name="grupo">
+        {% for g in grupos %}
+          {# Administrador nunca é o pré-selecionado: se for para promover,
+             que seja escolha explícita. #}
+          <option value="{{ g.chave }}"
+                  {{ 'selected' if g.chave == 'operador' }}>{{ g.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="principal" type="submit">Cadastrar</button>
+  </form>
+  <p class="explica" style="margin:.8rem 0 0">
+    Entra com a senha provisória <strong class="mono">{{ senha_provisoria }}</strong>
+    e é obrigado a trocá-la antes de ver qualquer tela. O que cada permissão
+    enxerga se define em <strong>Configuração › Permissões</strong>.
+  </p>
+</div>
+
+{% if avisar %}
+<script>
+  /* Aviso do navegador logo depois de cadastrar: a senha provisória é o que o
+     administrador precisa passar adiante na hora, e um texto na tela some
+     assim que ele navega. O `?avisar=` é tirado do endereço em seguida, senão
+     um F5 repetiria o aviso de um cadastro que já foi feito. */
+  window.alert(
+    "Usuário {{ avisar }} cadastrado.\n\n" +
+    "Senha provisória: {{ senha_provisoria }}\n\n" +
+    "Passe esta senha para a pessoa. Ela é obrigada a trocá-la no primeiro " +
+    "acesso, e depois disso ninguém mais consegue vê-la."
+  );
+  history.replaceState(null, "", "/configuracao/usuarios");
+</script>
+{% endif %}
+{% endblock %}

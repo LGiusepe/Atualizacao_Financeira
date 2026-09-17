@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block titulo %}Trocar a senha{% endblock %}
+
+{% block conteudo %}
+{# Defaults: servidor velho com template novo não manda estas variáveis, e a
+   tela não pode cair por isso (ver "painel velho" nas armadilhas). #}
+{% set senha_atual = senha_atual | default('') %}
+{% set minimo = minimo | default(8) %}
+{% set maximo = maximo | default(16) %}
+<style>
+  /* A tela é uma coluna só e curta; esticada em 1180px ela fica largada no
+     canto esquerdo de um monitor grande. Centraliza o bloco inteiro. */
+  .tela-senha{max-width:30rem;margin:0 auto}
+  .form-senha input{width:100%;box-sizing:border-box;margin-bottom:.9rem}
+  .regras{margin:.2rem 0 1rem;padding-left:1.1rem;color:var(--suave);
+    font-size:.82rem;line-height:1.6}
+  .form-senha button.principal{width:100%}
+  /* Campo preenchido pelo painel: parece campo, mas não se digita nele. */
+  .campo-senha input[readonly]{color:var(--suave);cursor:default}
+  .dica-campo{margin:-.6rem 0 .9rem;font-size:.78rem;color:var(--suave)}
+  /* Mesmo olho da tela de entrada: digitar senha às cegas três vezes
+     seguidas é como se erra a troca e não se descobre onde. */
+  .campo-senha{position:relative}
+  .campo-senha input{padding-right:2.6rem}
+  .olho{position:absolute;right:.25rem;top:.1rem;width:2.1rem;height:2.1rem;
+    display:flex;align-items:center;justify-content:center;
+    padding:0;border:none;background:none;cursor:pointer;
+    color:var(--suave);border-radius:6px}
+  .olho:hover{color:var(--acento);background:var(--acento-fraco)}
+  .olho svg{width:1.1rem;height:1.1rem;display:block}
+  .olho .fechado{display:none}
+  .olho[aria-pressed="true"] .aberto{display:none}
+  .olho[aria-pressed="true"] .fechado{display:block}
+</style>
+
+{# O mesmo botão três vezes: em macro para o formulário caber na tela. #}
+{% macro olho() %}
+  <button type="button" class="olho" aria-pressed="false"
+          aria-label="Mostrar a senha" title="Mostrar a senha">
+    <svg class="aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+    <svg class="fechado" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M17.9 17.9A10.7 10.7 0 0 1 12 20C5 20 1 12 1 12a19.6 19.6 0 0 1 5.1-5.9"></path>
+      <path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 8 11 8a19.5 19.5 0 0 1-2.2 3.2"></path>
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+      <line x1="2" y1="2" x2="22" y2="22"></line>
+    </svg>
+  </button>
+{% endmacro %}
+
+<div class="tela-senha">
+
+  <h1>{{ 'Escolha sua senha' if primeira_vez else 'Trocar a senha' }}</h1>
+
+  {% if primeira_vez %}
+    <div class="aviso alerta">
+      <strong>Primeiro acesso.</strong>
+      A senha que você usou foi combinada por escrito e é previsível — serve
+      para entrar uma vez. Escolha agora uma senha só sua; nenhuma outra tela
+      abre antes disso.
+    </div>
+  {% else %}
+    <p class="sub">
+      A senha atual é pedida de novo: sem isso, quem sentasse na sua máquina com
+      a sessão aberta poderia trocá-la e trancar você do lado de fora.
+    </p>
+  {% endif %}
+
+  {% if erro %}<div class="aviso perigo">{{ erro }}</div>{% endif %}
+  {% if guardado %}<div class="aviso">{{ guardado }}</div>{% endif %}
+
+  <div class="cartao form-senha">
+    <form method="post" action="/trocar-senha" autocomplete="off">
+      <label for="atual">Senha atual</label>
+      <div class="campo-senha">
+        {# Preenchida quando o painel sabe qual é (primeiro acesso): o usuário
+           acabou de digitá-la no login e só precisa escolher a nova. Vai
+           mesmo assim no POST, que continua conferindo contra o resumo. #}
+        <input id="atual" name="atual" type="password"
+               autocomplete="current-password"
+               {% if senha_atual %}
+                 value="{{ senha_atual }}" readonly tabindex="-1"
+               {% else %}
+                 required autofocus
+               {% endif %}>
+        {{ olho() }}
+      </div>
+      {% if senha_atual %}
+        <p class="dica-campo">
+          É a senha que você acabou de usar para entrar — já vem preenchida.
+        </p>
+      {% endif %}
+
+      <label for="nova">Senha nova</label>
+      <div class="campo-senha">
+        <input id="nova" name="nova" type="password" required
+               autocomplete="new-password"
+               minlength="{{ minimo }}" maxlength="{{ maximo }}"
+               {% if senha_atual %}autofocus{% endif %}>
+        {{ olho() }}
+      </div>
+
+      <label for="repetida">Repita a senha nova</label>
+      <div class="campo-senha">
+        <input id="repetida" name="repetida" type="password" required
+               autocomplete="new-password"
+               minlength="{{ minimo }}" maxlength="{{ maximo }}">
+        {{ olho() }}
+      </div>
+
+      <ul class="regras">
+        <li>de {{ minimo }} a {{ maximo }} caracteres</li>
+        <li>ao menos uma letra e um número</li>
+        <li>não pode ser a senha inicial nem o seu usuário</li>
+      </ul>
+
+      <button class="principal" type="submit">Guardar senha nova</button>
+    </form>
+  </div>
+
+  <p class="sub" style="margin-top:1rem">
+    A senha não é guardada em lugar nenhum — fica só o resumo dela, e não há
+    como voltar atrás a partir dele. Esquecendo, um administrador redefine em
+    <strong>Configuração › Usuários</strong>.
+  </p>
+
+</div>
+
+<script>
+  /* Um olho por campo: cada botão alterna o input que está ao lado dele. */
+  document.querySelectorAll(".campo-senha").forEach(function (bloco) {
+    var campo = bloco.querySelector("input");
+    var olho = bloco.querySelector(".olho");
+    if (!campo || !olho) return;
+    olho.addEventListener("click", function () {
+      var mostrando = campo.type === "text";
+      campo.type = mostrando ? "password" : "text";
+      olho.setAttribute("aria-pressed", String(!mostrando));
+      var rotulo = mostrando ? "Mostrar a senha" : "Ocultar a senha";
+      olho.setAttribute("aria-label", rotulo);
+      olho.title = rotulo;
+      /* Campo travado não recebe foco: o cursor deve ficar onde se digita. */
+      if (campo.readOnly) return;
+      campo.focus();
+      campo.setSelectionRange(campo.value.length, campo.value.length);
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block titulo %}Configuração pendente{% endblock %}
+
+{% block conteudo %}
+<h1>Falta revisar o registro de contas</h1>
+
+<div class="aviso alerta">{{ erro }}</div>
+
+<div class="cartao">
+  <h3 style="margin-top:0">O que fazer</h3>
+  <ol style="font-size:.9rem;line-height:1.8">
+    <li>Gere o rascunho a partir da sua base real:
+      <div class="mono" style="margin:.3rem 0">python scripts/gerar_registro_fornecedores.py</div>
+    </li>
+    <li>Abra <span class="mono">config/fornecedores.gerado.yaml</span> e confira,
+      conta por conta:
+      <ul style="margin:.3rem 0">
+        <li><span class="mono">email.eh_operadora</span> e
+            <span class="mono">email.cidade</span> — nas contas de operadora,
+            para o e-mail citar a cidade atendida.</li>
+        <li><span class="mono">coleta.remetentes</span> e
+            <span class="mono">coleta.identificadores</span> — como reconhecer
+            a fatura no Outlook. O identificador (o número da linha) é o que
+            separa uma conta Vivo da outra.</li>
+        <li><span class="mono">vencimento_dia</span> — o dia do vencimento,
+            que está na coluna VENCIMENTO da aba CONTAS FIXAS.</li>
+        <li><span class="mono">ativo</span> — marque <span class="mono">false</span>
+            no que está DESCONTINUADO, cancelado ou redirecionado.</li>
+      </ul>
+    </li>
+    <li>Renomeie para <span class="mono">config/fornecedores.yaml</span>:
+      <div class="mono" style="margin:.3rem 0">copy config\fornecedores.gerado.yaml config\fornecedores.yaml</div>
+    </li>
+    <li>Volte aqui e clique em Recarregar configuração.</li>
+  </ol>
+  <div class="barra-acoes">
+    <form class="linha" method="post" action="/recarregar">
+      <input type="hidden" name="competencia" value="{{ competencia }}">
+      <button class="principal">Recarregar configuração</button>
+    </form>
+    <a class="botao" href="/diagnostico?competencia={{ competencia }}">Ver diagnóstico</a>
+  </div>
+</div>
+{% endblock %}

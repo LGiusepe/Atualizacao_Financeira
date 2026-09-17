@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+
+{% block conteudo %}
+<style>
+  /* Uma linha por registro; cada célula é um input direto na tabela.
+     Editar em massa é o caso normal aqui — abrir um formulário por
+     registro obrigaria a ir e voltar dez vezes. */
+  /* `table-layout:fixed` faz a largura do <th> valer de verdade. Sem isso o
+     navegador reparte o espaço pelo conteúdo e a coluna do nome — que é a
+     mais importante — vira uma tira de 50px. */
+  .tabela-cadastro{table-layout:fixed}
+  .tabela-cadastro input{width:100%;box-sizing:border-box;font-size:.84rem;
+    padding:.28rem .4rem}
+  .tabela-cadastro td{padding:.3rem .35rem;vertical-align:middle}
+  .tabela-cadastro th{font-size:.7rem;position:relative;
+    overflow:hidden;text-overflow:ellipsis}
+  .tabela-cadastro tbody tr:hover{background:transparent}
+
+  /* Alça de arrastar, colada na borda direita do cabeçalho. */
+  .puxador{position:absolute;top:0;right:0;width:9px;height:100%;
+    cursor:col-resize;user-select:none;touch-action:none}
+  .puxador::after{content:"";position:absolute;top:20%;bottom:20%;right:4px;
+    width:2px;border-radius:2px;background:var(--borda)}
+  .puxador:hover::after,.redimensionando .puxador::after{background:var(--acento)}
+  body.redimensionando{cursor:col-resize;user-select:none}
+  .linha-nova{background:var(--acento-fraco)}
+  .aviso-guardado{color:var(--ok);font-weight:600;font-size:.85rem}
+
+  /* ---------- lixeira ----------
+     A caixa de seleção continua existindo (é ela que envia `remover__N`),
+     mas fica invisível atrás do rótulo — pôr o ícone dentro do próprio
+     <input> não funciona: elemento substituído ignora ::before. */
+  .lixeira{display:inline-flex;align-items:center;justify-content:center;
+    width:2.1rem;height:2.1rem;border-radius:50%;cursor:pointer;
+    border:1px solid transparent;
+    transition:background .12s,border-color .12s}
+  .lixeira input{position:absolute;opacity:0;width:0;height:0;margin:0}
+  .lixeira .icone{
+    font-size:1rem;line-height:1;
+    /* Em repouso o emoji fica dessaturado, para a coluna não virar um
+       paredão colorido; acende ao passar o mouse ou quando marcado. */
+    filter:grayscale(1) opacity(.5);
+    transition:filter .12s,transform .12s}
+  .lixeira:hover{background:var(--erro-fraco);border-color:var(--erro)}
+  .lixeira:hover .icone{filter:none;transform:scale(1.12)}
+  .lixeira input:focus-visible+.icone{filter:none}
+  .lixeira:focus-within{background:var(--erro-fraco);border-color:var(--erro);
+    outline:2px solid var(--erro);outline-offset:1px}
+  /* Marcada: fica acesa sem depender do mouse. */
+  .lixeira input:checked+.icone{filter:none;transform:scale(1.12)}
+  .linha-cadastro:has(.lixeira input:checked) .lixeira{
+    background:var(--erro-fraco);border-color:var(--erro)}
+  /* A linha inteira apaga, para ficar claro o que vai sumir ao salvar. */
+  .linha-cadastro:has(.lixeira input:checked) input:not([type=checkbox]){
+    opacity:.4;text-decoration:line-through}
+  .marcada-para-sair{font-size:.68rem;color:var(--erro);font-weight:600;
+    display:block;margin-top:.15rem}
+  .linha-cadastro:has(.lixeira input:checked) .marcada-para-sair{
+    visibility:visible}
+  .marcada-para-sair{visibility:hidden}
+</style>
+
+<h1>{{ titulo }}</h1>
+<p class="sub">{{ explicacao }}</p>
+
+{% if guardado %}
+  <div class="aviso"><span class="aviso-guardado">✓ {{ guardado }}</span></div>
+{% endif %}
+
+<form method="post" action="{{ acao }}">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
+
+  {# `sum(attribute='largura')` estoura se alguma coluna não tiver a chave —
+     é o que acontece rodando um app.py anterior a ela. Somando à mão, a tela
+     abre com largura padrão e o aviso de reinício aparece normalmente. #}
+  {% set larguras = [] %}
+  {% for c in colunas %}{% set _ = larguras.append(c.get('largura') or 160) %}{% endfor %}
+  {% set largura_total = larguras | sum + 72 %}
+  <div class="cartao rolagem">
+    <table class="tabela-cadastro" id="tabela" data-chave="{{ chave_larguras }}"
+           style="min-width:{{ largura_total }}px">
+      <thead>
+        <tr>
+          {% for c in colunas %}
+            <th style="width:{{ c.get('largura') or 160 }}px" data-col="{{ c.campo }}"
+                title="{{ c.rotulo }} — arraste a borda para alargar">
+              {{ c.rotulo }}<span class="puxador" aria-hidden="true"></span>
+            </th>
+          {% endfor %}
+          <th style="width:72px;text-align:center">Remover</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in itens %}
+        {# `loop.parent` não existe no Jinja: guarda-se o índice da linha
+           antes de entrar no laço das colunas. #}
+        {% set linha = loop.index0 %}
+        <tr class="linha-cadastro">
+          {% for c in colunas %}
+            <td>
+              <input name="{{ c.campo }}__{{ linha }}"
+                     value="{{ item[c.campo] or '' }}"
+                     placeholder="{{ c.get('exemplo') or '' }}"
+                     {{ 'required' if c.get('obrigatorio') }}>
+            </td>
+          {% endfor %}
+          <td style="text-align:center">
+            {# Sem exclusão silenciosa: some da lista só quando você marca
+               a lixeira E salva. Até lá dá para desmarcar e nada acontece. #}
+            <label class="lixeira" title="Tirar {{ item.nome }} do cadastro ao salvar">
+              <input type="checkbox" name="remover__{{ linha }}" value="1"
+                     aria-label="Remover {{ item.nome }}">
+              <span class="icone" aria-hidden="true">🗑️</span>
+            </label>
+            <span class="marcada-para-sair">sai ao salvar</span>
+          </td>
+        </tr>
+        {% endfor %}
+
+        <tr class="linha-nova">
+          {% for c in colunas %}
+            <td>
+              <input name="novo__{{ c.campo }}" placeholder="{{ c.get('exemplo') or ('novo ' ~ c.rotulo|lower) }}">
+            </td>
+          {% endfor %}
+          <td style="text-align:center;color:var(--suave);font-size:.75rem">novo</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="barra-acoes">
+    <button class="principal" type="submit">Salvar cadastro</button>
+    <button type="button" class="discreto" id="restaurar-larguras"
+            title="Voltar as colunas à largura original">↔ Larguras padrão</button>
+    <span class="mono" style="color:var(--suave);font-size:.78rem">
+      grava em {{ arquivo }} — nada é escrito no OneDrive ·
+      arraste a borda do cabeçalho para alargar uma coluna
+    </span>
+  </div>
+</form>
+
+<script>
+/* Colunas arrastáveis.
+   Razão social não cabe em largura fixa que sirva para todo mundo, e o que é
+   confortável depende do monitor. A largura escolhida fica guardada neste
+   navegador, por tela — voltar aqui amanhã encontra do mesmo jeito. */
+(function () {
+  const tabela = document.getElementById('tabela');
+  if (!tabela) return;
+  const chave = 'larguras:' + (tabela.dataset.chave || 'cadastro');
+  const MINIMO = 60;
+
+  function guardadas() {
+    try { return JSON.parse(localStorage.getItem(chave) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function guardar(mapa) {
+    try { localStorage.setItem(chave, JSON.stringify(mapa)); } catch (e) {}
+  }
+
+  const salvas = guardadas();
+  const colunas = tabela.querySelectorAll('th[data-col]');
+  colunas.forEach(function (th) {
+    const largura = salvas[th.dataset.col];
+    if (largura) th.style.width = largura + 'px';
+  });
+
+  function recalcularMinimo() {
+    /* A tabela precisa ser pelo menos a soma das colunas; senão o navegador
+       reaperta tudo e o arrasto parece não ter efeito. */
+    let soma = 0;
+    tabela.querySelectorAll('th').forEach(function (th) {
+      soma += parseFloat(th.style.width) || th.getBoundingClientRect().width;
+    });
+    tabela.style.minWidth = Math.round(soma) + 'px';
+  }
+  recalcularMinimo();
+
+  colunas.forEach(function (th) {
+    const puxador = th.querySelector('.puxador');
+    if (!puxador) return;
+
+    puxador.addEventListener('pointerdown', function (evento) {
+      evento.preventDefault();
+      puxador.setPointerCapture(evento.pointerId);
+      document.body.classList.add('redimensionando');
+      th.classList.add('redimensionando');
+
+      const xInicial = evento.clientX;
+      const larguraInicial = th.getBoundingClientRect().width;
+
+      function mover(e) {
+        const nova = Math.max(MINIMO, larguraInicial + (e.clientX - xInicial));
+        th.style.width = nova + 'px';
+        recalcularMinimo();
+      }
+      function soltar() {
+        puxador.removeEventListener('pointermove', mover);
+        puxador.removeEventListener('pointerup', soltar);
+        document.body.classList.remove('redimensionando');
+        th.classList.remove('redimensionando');
+        const mapa = guardadas();
+        mapa[th.dataset.col] = Math.round(parseFloat(th.style.width));
+        guardar(mapa);
+      }
+      puxador.addEventListener('pointermove', mover);
+      puxador.addEventListener('pointerup', soltar);
+    });
+
+    /* Duplo clique na alça: ajusta ao maior conteúdo da coluna. */
+    puxador.addEventListener('dblclick', function (evento) {
+      evento.preventDefault();
+      const indice = [...th.parentNode.children].indexOf(th);
+      let maior = th.scrollWidth + 24;
+      tabela.querySelectorAll('tbody tr').forEach(function (linha) {
+        const campo = linha.children[indice] && linha.children[indice].querySelector('input');
+        if (!campo) return;
+        const régua = document.createElement('span');
+        régua.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font:' +
+                              getComputedStyle(campo).font;
+        régua.textContent = campo.value || campo.placeholder || '';
+        document.body.appendChild(régua);
+        maior = Math.max(maior, régua.offsetWidth + 28);
+        régua.remove();
+      });
+      th.style.width = Math.max(MINIMO, Math.min(maior, 620)) + 'px';
+      recalcularMinimo();
+      const mapa = guardadas();
+      mapa[th.dataset.col] = Math.round(parseFloat(th.style.width));
+      guardar(mapa);
+    });
+  });
+
+  const restaurar = document.getElementById('restaurar-larguras');
+  if (restaurar) {
+    restaurar.addEventListener('click', function () {
+      try { localStorage.removeItem(chave); } catch (e) {}
+      location.reload();
+    });
+  }
+})();
+</script>
+
+{% if nota %}
+  <div class="cartao compacto">
+    <h3 style="margin-top:0">Por que isso importa</h3>
+    <p class="explica" style="margin:0">{{ nota }}</p>
+  </div>
+{% endif %}
+{% endblock %}

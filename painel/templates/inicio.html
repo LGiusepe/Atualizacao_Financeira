@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block titulo %}Contas de {{ competencia.extenso }}{% endblock %}
+
+{% block conteudo %}
+<style>
+  .prazo{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .prazo .quando{font-weight:600}
+  .prazo .falta{display:block;font-size:.74rem;color:var(--suave)}
+  /* Data estimada fica discreta — mas prazo estourado fala mais alto que
+     procedência: a ordem aqui garante que o vermelho vença o cinza. */
+  .prazo.estimado .quando{font-weight:500;color:var(--suave)}
+  /* Entregue no prazo: cinza. A cor forte fica reservada para o que ainda
+     precisa de alguém. */
+  .prazo.entregue .quando,.prazo.entregue .falta{color:var(--suave);font-weight:500}
+  .prazo.vencida .quando{color:var(--erro);font-weight:600}
+  .prazo.vencida .falta{color:var(--erro);font-weight:600}
+  .prazo.perto .quando{color:var(--atencao);font-weight:600}
+  .prazo.perto .falta{color:var(--atencao);font-weight:600}
+  /* Valor que veio do cadastro, não do boleto: mais apagado e etiquetado,
+     para ninguém confundir estimativa com o que a fatura realmente cobra. */
+  .valor-previsto{color:var(--suave)}
+  .marca-previsto{display:block;font-size:.68rem;color:var(--suave)}
+
+  /* "Já enviei": some até você precisar, e abre um formulário curto. */
+  .ja-enviei{display:inline-block;position:relative}
+  .ja-enviei>summary{
+    list-style:none;cursor:pointer;user-select:none;
+    /* Só o ✓: a coluna de ações já tem Preparar e Abrir, e o rótulo por
+       extenso empurrava tudo para fora da tabela. */
+    width:2rem;height:2rem;padding:0;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:.95rem;line-height:1;
+    border:1px solid var(--borda);border-radius:6px;background:var(--papel);
+    color:var(--suave);vertical-align:middle}
+  .ja-enviei>summary::-webkit-details-marker{display:none}
+  .ja-enviei>summary:hover{border-color:var(--ok);color:var(--ok)}
+  .ja-enviei[open]>summary{border-color:var(--ok);color:var(--ok)}
+  .ja-enviei form{
+    position:absolute;right:0;top:calc(100% + .35rem);z-index:20;
+    width:18rem;padding:.9rem;text-align:left;
+    /* A célula da tabela usa white-space:nowrap para os botões não quebrarem.
+       Os filhos herdam isso, e era o que jogava o botão para fora da caixa. */
+    white-space:normal;
+    display:flex;flex-direction:column;align-items:stretch;gap:.15rem;
+    background:var(--papel);border:1px solid var(--acento);border-radius:9px;
+    box-shadow:0 10px 30px rgba(0,0,0,.22)}
+  .ja-enviei form input{width:100%;margin:0 0 .5rem;box-sizing:border-box}
+  .ja-enviei form button{width:100%;margin-top:.2rem}
+  .titulo-popover{font-size:.88rem;margin-bottom:.5rem;display:block}
+
+  /* Fechamento do mês: fundo um degrau mais escuro que o resto. Encerra a
+     lista em vez de disputar atenção com ela. */
+  .fechamento{background:var(--fundo-forte);border-color:var(--borda-forte)}
+  .fechamento h3{margin:0 0 .7rem}
+  .fechamento .numeros{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));
+    gap:.9rem}
+  .fechamento .caixa{
+    padding:.65rem .8rem;border-radius:8px;
+    background:var(--papel);border:1px solid var(--borda-forte)}
+  /* O total do mês fecha a linha: sem cor de estado, só peso. */
+  .fechamento .caixa.somatoria{background:transparent;border-style:dashed}
+  .fechamento .rotulo{
+    display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--suave);font-weight:600}
+  .fechamento .cifra{
+    display:block;margin:.15rem 0 .1rem;
+    font-size:1.28rem;font-weight:650;font-variant-numeric:tabular-nums}
+  .fechamento .pago .cifra{color:var(--ok)}
+  .fechamento .aberto .cifra{color:var(--atencao)}
+  /* Mês fechado não tem o que cobrar: o zero sai do laranja. */
+  .fechamento .aberto.zerado .cifra{color:var(--suave)}
+  .fechamento .nota{display:block;font-size:.74rem;color:var(--suave);line-height:1.35}
+  /* Laranja só para soma incompleta — é o único aviso que muda decisão.
+     A parcela estimada já vem marcada linha a linha na tabela. */
+  .fechamento .falta-valor{color:var(--atencao)}
+</style>
+
+<h1>Contas de {{ competencia.extenso }}</h1>
+<p class="sub">
+  {{ total }} conta{{ 's' if total != 1 }} ativa{{ 's' if total != 1 }} ·
+  {{ concluidas }} concluída{{ 's' if concluidas != 1 }}
+  {%- if atrasadas %} · <span class="pastilha erro">{{ atrasadas }} vencida{{ 's' if atrasadas != 1 }}</span>{% endif %}
+  {%- if proximas %} · <span class="pastilha atencao">{{ proximas }} vence{{ 'm' if proximas != 1 }} em até {{ DIAS_DE_ALERTA }} dias</span>{% endif %}
+  {%- if com_erro %} · <span class="pastilha erro">{{ com_erro }} com erro</span>{% endif %}
+</p>
+<p class="sub" style="margin-top:-.8rem">
+  Ordenadas pelo vencimento — o que vence antes vem primeiro.
+</p>
+
+{% if not linhas %}
+  <div class="cartao"><p class="vazio">Nenhuma conta ativa no registro.</p></div>
+{% else %}
+<div class="cartao rolagem">
+  <table>
+    <thead>
+      <tr>
+        <th>Conta</th>
+        <th>Progresso</th>
+        <th>Situação</th>
+        <th class="num">Valor</th>
+        <th>Vencimento</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        <td>
+          <a href="/conta/{{ l.conta.id }}?competencia={{ competencia }}"
+             style="text-decoration:none;font-weight:550">{{ l.conta.rotulo }}</a>
+          {% if l.conta.email.eh_operadora and l.conta.email.cidade %}
+            <div class="mono">operadora · {{ l.conta.email.cidade }}</div>
+          {% endif %}
+        </td>
+        <td>
+          <div class="trilha" title="{{ l.progresso }} de {{ ETAPAS|length }} etapas">
+            {% for e in ETAPAS %}
+              {% set s = l.situacoes[e] %}
+              <span class="{{ CORES_SITUACAO[s][0] }}" title="{{ e.rotulo }}: {{ CORES_SITUACAO[s][1] }}"></span>
+            {% endfor %}
+          </div>
+        </td>
+        <td>
+          {% if l.proc.enviado_por_fora %}
+            <span class="pastilha ok">enviada por fora</span>
+            <div class="mono">em {{ l.proc.enviado_em | data_br }}</div>
+          {% elif l.tem_erro %}
+            <span class="pastilha erro">erro</span>
+          {% elif l.concluido %}
+            <span class="pastilha ok">concluída</span>
+          {% elif l.progresso %}
+            <span class="pastilha atencao">em andamento ({{ l.progresso }}/{{ ETAPAS|length }})</span>
+          {% else %}
+            <span class="pastilha pendente">não iniciada</span>
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if l.valor is not none %}
+            {# Procedência junto do número: "previsto" sem dizer de onde veio
+               é o tipo de coisa que se confere uma vez e nunca mais. #}
+            {% set de_onde = ('valor pago em ' ~ l.valor_do_mes.extenso ~ ' — o real vem do boleto')
+                             if l.valor_do_mes
+                             else 'valor aproximado do cadastro — o real vem do boleto' %}
+            <span class="{{ 'valor-previsto' if l.valor_estimado }}"
+                  {% if l.valor_estimado %}title="{{ de_onde }}"{% endif %}>
+              {{ l.valor | moeda }}
+            </span>
+            {# O rótulo continua "previsto" nos dois casos: o que importa na
+               varredura da coluna é que o número ainda não é o do boleto. De
+               onde ele veio está no title, para quem precisar saber. #}
+            {% if l.valor_estimado %}<span class="marca-previsto">previsto</span>{% endif %}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          {% if l.vencimento %}
+            {% set d = l.dias_para_vencer %}
+            {# Fatura já despachada não cobra mais nada: o prazo só continua
+               em vermelho se o envio saiu depois do vencimento, e aí é
+               registro do atraso, não alerta. #}
+            {% set classe = 'entregue' if (l.despachada_em and not l.atrasada_no_envio)
+                            else ('vencida' if d < 0
+                                  else ('perto' if d <= DIAS_DE_ALERTA else '')) %}
+            <span class="prazo {{ classe }} {{ 'estimado' if l.vencimento_estimado }}">
+              <span class="quando">{{ l.vencimento | data_br }}</span>
+              <span class="falta">
+                {%- if l.despachada_em -%}
+                  enviada em {{ l.despachada_em | data_br }}
+                  {%- if l.atrasada_no_envio %}, com atraso{% endif -%}
+                {%- elif l.concluido -%}
+                  enviada
+                {%- elif d < 0 -%}
+                  venceu há {{ -d }} dia{{ 's' if d != -1 }}
+                {%- elif d == 0 -%}
+                  vence hoje
+                {%- elif d == 1 -%}
+                  vence amanhã
+                {%- else -%}
+                  faltam {{ d }} dias
+                {%- endif -%}
+              </span>
+            </span>
+          {% else %}
+            <span class="mono">sem vencimento</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;white-space:nowrap">
+          {% if l.proc.enviado_por_fora %}
+            <form class="linha" method="post" action="/conta/{{ l.conta.id }}/desfazer-envio-fora"
+                  onsubmit="return confirm('Desfazer a marcação de enviada e reabrir as etapas?');">
+              <input type="hidden" name="competencia" value="{{ competencia }}">
+              <button class="discreto" title="Reabrir esta conta">↺ Reabrir</button>
+            </form>
+          {% else %}
+            <form class="linha" method="post" action="/conta/{{ l.conta.id }}/preparar">
+              <input type="hidden" name="competencia" value="{{ competencia }}">
+              <button title="Coleta documentos, preenche a autorização e monta o PDF. Não grava nada fora de dados/.">Preparar</button>
+            </form>
+            <details class="ja-enviei">
+              <summary title="Já enviei esta fatura por fora — registrar com a data"
+                       aria-label="Registrar envio feito fora da ferramenta">✓</summary>
+              <form method="post" action="/conta/{{ l.conta.id }}/enviada-fora">
+                <input type="hidden" name="competencia" value="{{ competencia }}">
+                <input type="hidden" name="voltar_para" value="lista">
+                <strong class="titulo-popover">Enviada fora da ferramenta</strong>
+                <label for="d-{{ l.conta.id }}">Data do envio</label>
+                <input id="d-{{ l.conta.id }}" name="data_envio" type="date"
+                       value="{{ hoje.isoformat() }}" required>
+                <label for="o-{{ l.conta.id }}">Observação</label>
+                <input id="o-{{ l.conta.id }}" name="observacao"
+                       placeholder="ex.: mandei pelo Outlook">
+                <button class="principal" type="submit">Registrar</button>
+              </form>
+            </details>
+          {% endif %}
+          <a class="botao" href="/conta/{{ l.conta.id }}?competencia={{ competencia }}">Abrir</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# --------------------------------------------------- fechamento do mês #}
+{# A ferramenta acompanha a autorização, não o extrato: "pagas" são as que
+   já foram despachadas ao financeiro. A nota embaixo de cada cifra diz
+   exatamente isso, para o número não passar por confirmação de pagamento. #}
+<div class="cartao fechamento">
+  <h3>Fechamento de {{ competencia.extenso }}</h3>
+  <div class="numeros">
+
+    <div class="caixa pago">
+      <span class="rotulo">Já pagas</span>
+      <strong class="cifra">{{ resumo.pago.total | moeda }}</strong>
+      <span class="nota">
+        {{ resumo.pago.quantas }} conta{{ 's' if resumo.pago.quantas != 1 }}
+        com autorização enviada
+        {%- if resumo.pago.previsto %}<br>
+          {%- if resumo.pago.previsto == resumo.pago.total %}
+            <span>tudo pelo valor aproximado do cadastro</span>
+          {%- else %}
+            <span>{{ resumo.pago.previsto | moeda }} pelo valor
+            aproximado do cadastro</span>
+          {%- endif %}
+        {%- endif %}
+        {%- if resumo.pago.sem_valor %}<br>
+          <span class="falta-valor">{{ resumo.pago.sem_valor }} sem valor, fora da
+          soma</span>
+        {%- endif %}
+      </span>
+    </div>
+
+    <div class="caixa aberto {{ 'zerado' if not resumo.aberto.quantas }}">
+      <span class="rotulo">A pagar</span>
+      <strong class="cifra">{{ resumo.aberto.total | moeda }}</strong>
+      <span class="nota">
+        {{ resumo.aberto.quantas }} conta{{ 's' if resumo.aberto.quantas != 1 }}
+        em aberto
+        {%- if resumo.aberto.previsto %}<br>
+          {%- if resumo.aberto.previsto == resumo.aberto.total %}
+            <span>tudo pelo valor aproximado do cadastro</span>
+          {%- else %}
+            <span>{{ resumo.aberto.previsto | moeda }} pelo valor
+            aproximado do cadastro</span>
+          {%- endif %}
+        {%- endif %}
+        {%- if resumo.aberto.sem_valor %}<br>
+          <span class="falta-valor">{{ resumo.aberto.sem_valor }} sem valor, fora
+          da soma</span>
+        {%- endif %}
+      </span>
+    </div>
+
+    <div class="caixa somatoria">
+      <span class="rotulo">Total do mês</span>
+      <strong class="cifra">{{ resumo.geral.total | moeda }}</strong>
+      <span class="nota">
+        {{ resumo.geral.quantas }} conta{{ 's' if resumo.geral.quantas != 1 }}
+        ativa{{ 's' if resumo.geral.quantas != 1 }}
+        {%- if resumo.geral.sem_valor %}<br>
+          <span class="falta-valor">soma incompleta: {{ resumo.geral.sem_valor }}
+          conta{{ 's' if resumo.geral.sem_valor != 1 }} sem valor</span>
+        {%- endif %}
+      </span>
+    </div>
+
+  </div>
+</div>
+
+<div class="cartao compacto">
+  <h3 style="margin-top:0">Legenda das etapas</h3>
+  <div style="display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.82rem;color:var(--suave)">
+    {% for e in ETAPAS %}
+      <span>{{ loop.index }}. {{ e.rotulo }}{% if e in ETAPAS_SENSIVEIS %} <span class="cadeado">· exige confirmação</span>{% endif %}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

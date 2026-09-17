@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block titulo %}Permissões{% endblock %}
+
+{% block conteudo %}
+<style>
+  .grade-permissoes{width:100%;border-collapse:collapse}
+  .grade-permissoes th.tela{text-align:left;white-space:normal;min-width:14rem}
+  .grade-permissoes td.tela{padding:.55rem .5rem}
+  .grade-permissoes .apoio{display:block;font-size:.78rem;color:var(--suave);
+    font-weight:400;text-transform:none;letter-spacing:0}
+  .grade-permissoes td.marca,.grade-permissoes th.grupo{text-align:center}
+  .grade-permissoes th.grupo{min-width:8rem;vertical-align:bottom}
+  /* A caixa é o mesmo `.interruptor` de Faturas ativas (definido no
+     base.html): marcado = círculo verde inteiro com o "certo", desmarcado =
+     só o contorno. Duas telas que marcam e desmarcam coisa não podem ter
+     duas aparências de caixa. */
+  .grade-permissoes .marca label{display:flex;justify-content:center;
+    cursor:pointer;padding:.1rem}
+  /* Com poucos grupos a coluna fica larga; o campo do nome não precisa
+     acompanhar, senão parece um botão gigante em vez de um rótulo editável. */
+  .nome-grupo{width:100%;max-width:10rem;box-sizing:border-box;text-align:center;
+    font-size:.84rem;margin:0 auto .3rem;display:block}
+  .grade-permissoes tbody tr:hover{background:var(--acento-fraco)}
+  .coluna-admin{color:var(--suave);font-size:.8rem}
+  .linha-grupo{display:flex;gap:.4rem;align-items:flex-end;flex-wrap:wrap}
+  .rodape-grade{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;
+    margin-top:1rem}
+  .quantos{font-size:.75rem;color:var(--suave);display:block;font-weight:400}
+</style>
+
+<h1>Permissões</h1>
+<p class="sub">
+  O que cada grupo enxerga. Quem não tem a tela marcada não vê o link no menu
+  e também não entra digitando o endereço — a trava é no servidor. Em quem cada
+  grupo se aplica você define em <strong>Configuração › Usuários</strong>.
+</p>
+
+{% if erro %}<div class="aviso perigo">{{ erro }}</div>{% endif %}
+{% if guardado %}<div class="aviso">{{ guardado }}</div>{% endif %}
+
+<div class="aviso alerta">
+  <strong>Administrador não aparece na grade.</strong>
+  Ele vê tudo por construção, inclusive esta tela e o cadastro de usuários. Se
+  desse para tirar telas dele, um clique errado trancaria todo mundo do lado de
+  fora e não sobraria por onde desfazer.
+</div>
+
+<form method="post" action="/configuracao/permissoes">
+  <div class="cartao rolagem">
+    <table class="grade-permissoes">
+      <thead>
+        <tr>
+          <th class="tela">Tela</th>
+          {% for g in grupos if not g.e_admin %}
+            <th class="grupo">
+              {# O marcador diz que esta coluna esteve na tela. Sem ele, um
+                 grupo com tudo desmarcado não mandaria campo nenhum e o
+                 servidor não saberia diferenciar de "nem foi editado" —
+                 apagaria as telas de quem não foi mexido. #}
+              <input type="hidden" name="grupo__{{ g.chave }}" value="1">
+              <input class="nome-grupo" type="text" name="nome__{{ g.chave }}"
+                     value="{{ g.nome }}" aria-label="Nome do grupo {{ g.nome }}">
+              <span class="quantos">
+                {% set n = quantos.get(g.chave, 0) %}
+                {{ n }} usuário{{ '' if n == 1 else 's' }}
+              </span>
+            </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for tela in telas %}
+        <tr>
+          <td class="tela">
+            <strong>{{ tela.rotulo }}</strong>
+            <span class="apoio">{{ tela.apoio }}</span>
+          </td>
+          {% for g in grupos if not g.e_admin %}
+            <td class="marca">
+              <label>
+                <input type="checkbox" class="interruptor"
+                       name="tela__{{ g.chave }}__{{ tela.id }}"
+                       value="1" {{ 'checked' if tela.id in g.telas }}
+                       aria-label="{{ tela.rotulo }} para {{ g.nome }}">
+              </label>
+            </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="vazio">Nenhuma tela no catálogo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if grupos | rejectattr('e_admin') | list | length == 0 %}
+      <p class="vazio">
+        Só existe o grupo Administrador. Crie um grupo abaixo para começar a
+        separar acessos.
+      </p>
+    {% endif %}
+
+    <div class="rodape-grade">
+      <button class="principal" type="submit">Guardar permissões</button>
+      <span class="explica" style="margin:0">
+        Vale na próxima tela que a pessoa abrir — ninguém precisa sair e entrar
+        de novo.
+      </span>
+    </div>
+  </div>
+</form>
+
+<h3>Telas que ficam só com o administrador</h3>
+<div class="cartao">
+  <p class="explica" style="margin:0 0 .5rem">
+    Não entram na grade porque são o próprio controle de acesso: quem pudesse
+    liberá-las a um grupo poderia se promover sozinho.
+  </p>
+  <ul class="coluna-admin" style="margin:0;padding-left:1.1rem;line-height:1.8">
+    {% for tela in telas_admin %}
+      <li><strong>{{ tela.rotulo }}</strong> — {{ tela.apoio }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<h3>Grupos</h3>
+<div class="cartao">
+  <form class="linha-grupo" method="post" action="/configuracao/permissoes/novo">
+    <div style="flex:1 1 14rem">
+      <label for="nome">Novo grupo</label>
+      <input id="nome" name="nome" type="text" required autocomplete="off"
+             placeholder="Financeiro, Estagiário…" style="width:100%">
+    </div>
+    <button type="submit">Criar grupo</button>
+  </form>
+  <p class="explica" style="margin:.8rem 0 .4rem">
+    Nasce sem nenhuma tela marcada. Liberar por engano é pior que voltar aqui e
+    marcar o que falta.
+  </p>
+  <div class="linha-grupo">
+    {% for g in grupos if not g.e_admin %}
+      <form method="post" action="/configuracao/permissoes/remover"
+            onsubmit="return confirm('Remover o grupo {{ g.nome }}?');">
+        <input type="hidden" name="chave" value="{{ g.chave }}">
+        <button class="discreto remover" type="submit"
+                title="Remover o grupo {{ g.nome }}">🗑 {{ g.nome }}</button>
+      </form>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+# --------------------------------------------------------------------------- #
+# Automação Financeira — o que NUNCA entra no repositório
+#
+# Regra: dado real da empresa fica só nesta máquina. O repositório leva o
+# código e os arquivos de exemplo; quem clonar copia os `.exemplo.yaml` e
+# preenche com a realidade dele.
+#
+# Antes de publicar, rode:  python scripts/conferir_publicacao.py
+# --------------------------------------------------------------------------- #
+
+# ---- Configuração com dados reais ----------------------------------------- #
+# CNPJ, conta bancária, telefone, e-mail do financeiro, caminhos do OneDrive,
+# números de contrato dos 51 fornecedores. Os `.exemplo.yaml` ficam versionados.
+config/*.yaml
+!config/*.exemplo.yaml
+
+# ---- Área de trabalho e material bruto ------------------------------------ #
+# Faturas, boletos, notas fiscais e autorizações preenchidas.
+dados/
+
+# O cofre de credenciais (cifrado por DPAPI, mas ainda assim é segredo) e o
+# retrato da estrutura do OneDrive moram aqui — a linha acima já cobre, mas
+# ficam explícitos para quem for mexer nesta lista.
+dados/cofre.dat
+dados/estado.db
+dados/inventario_onedrive.txt
+dados/raio_x_estrutura.json
+
+# ---- Execução -------------------------------------------------------------- #
+logs/
+*.log
+
+# ---- Marca da empresa ------------------------------------------------------ #
+# Logo e ícone são arte da empresa. Ficam na máquina; quem clonar roda
+# `python scripts/extrair_logo.py` para gerar a partir do próprio template de
+# autorização. Sem eles o cabeçalho mostra só o nome em texto.
+# Usuarios e a chave que assina o cookie de sessao. O arquivo de usuarios
+# guarda resumo de senha, nao a senha — mas e cadastro de pessoas da
+# empresa, e a chave desloga todo mundo se vazar.
+config/usuarios.yaml
+# Copias que as suites de teste deixam para tras se forem interrompidas.
+config/*.antes-da-suite
+config/*.antes-do-teste
+dados/sessao.chave
+
+painel/static/logo.png
+painel/static/logo-escura.png
+painel/static/favicon.ico
+
+# ---- Notas internas -------------------------------------------------------- #
+# Ficam na máquina, não no GitHub: citam fornecedores, CNPJ, caminhos e nomes
+# de pessoas. São o registro de trabalho do time — o README conta a mesma
+# história sem os dados da empresa.
+BACKLOG.md
+docs/
+
+# ---- Ferramentas de IA ----------------------------------------------------- #
+# Transcrições e configurações locais do assistente.
+.claude/
+
+# ---- Python ---------------------------------------------------------------- #
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ---- Office / sistema ------------------------------------------------------ #
+~$*
+*.tmp
+.cofre-*.tmp
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp

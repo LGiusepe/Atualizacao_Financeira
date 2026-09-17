@@ -1,0 +1,163 @@
+{#
+  Tela de entrada. NÃO estende base.html de propósito: o cabeçalho de lá tem
+  menu, seletor de mês e dados da competência — tudo coisa de quem já entrou.
+#}
+<!doctype html>
+<html lang="pt-BR" data-tema-inicial>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar · Automação Financeira</title>
+{% if tem_icone %}<link rel="icon" href="/static/favicon.ico" sizes="any">{% endif %}
+<script>
+  /* Mesmo tema do resto do painel, aplicado antes da primeira pintura. */
+  (function () {
+    try {
+      var salvo = localStorage.getItem("af-tema");
+      if (salvo === "claro" || salvo === "escuro") {
+        document.documentElement.setAttribute("data-tema", salvo);
+      }
+    } catch (e) {}
+  })();
+</script>
+<style>
+  :root{
+    --fundo:#f6f7f9; --papel:#fff; --borda:#e3e6ea; --texto:#1c2024;
+    --suave:#697077; --acento:#1f5fa9; --acento-fraco:#eaf1fa;
+    --erro:#b3261e; --erro-fraco:#fdecea;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-tema="claro"]){
+      --fundo:#14171a; --papel:#1c2024; --borda:#2c3238; --texto:#e6e8ea;
+      --suave:#9aa3ab; --acento:#6fa8e8; --acento-fraco:#1a2836;
+      --erro:#f08a82; --erro-fraco:#331917;
+    }
+  }
+  :root[data-tema="escuro"]{
+    --fundo:#14171a; --papel:#1c2024; --borda:#2c3238; --texto:#e6e8ea;
+    --suave:#9aa3ab; --acento:#6fa8e8; --acento-fraco:#1a2836;
+    --erro:#f08a82; --erro-fraco:#331917;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;
+    justify-content:center;padding:1.5rem;
+    background:var(--fundo);color:var(--texto);
+    font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+  .caixa{width:100%;max-width:23rem;background:var(--papel);
+    border:1px solid var(--borda);border-radius:12px;padding:1.6rem 1.5rem;
+    box-shadow:0 10px 34px rgba(0,0,0,.10)}
+  .marca{display:flex;justify-content:center;margin-bottom:.3rem}
+  .marca img{height:30px;width:auto;display:block}
+  .marca .logo-escura{display:none}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-tema="claro"]) .marca .logo-clara{display:none}
+    :root:not([data-tema="claro"]) .marca .logo-escura{display:block}
+  }
+  :root[data-tema="escuro"] .marca .logo-clara{display:none}
+  :root[data-tema="escuro"] .marca .logo-escura{display:block}
+  h1{font-size:1.05rem;text-align:center;margin:.9rem 0 .2rem}
+  .sub{text-align:center;color:var(--suave);font-size:.84rem;margin:0 0 1.3rem}
+  label{display:block;font-size:.76rem;color:var(--suave);margin-bottom:.2rem;
+    text-transform:uppercase;letter-spacing:.03em}
+  input{width:100%;font:inherit;font-size:.9rem;padding:.5rem .6rem;
+    border:1px solid var(--borda);border-radius:7px;background:var(--fundo);
+    color:var(--texto);margin-bottom:.9rem}
+  input:focus{outline:2px solid var(--acento);outline-offset:-1px}
+  button{width:100%;font:inherit;font-weight:600;padding:.55rem;
+    border:1px solid var(--acento);border-radius:7px;
+    background:var(--acento);color:#fff;cursor:pointer}
+  button:hover{filter:brightness(1.06)}
+  .aviso{background:var(--erro-fraco);color:var(--erro);border:1px solid var(--erro);
+    border-radius:8px;padding:.55rem .7rem;font-size:.84rem;margin-bottom:1rem}
+  /* O olho fica DENTRO do campo. A senha inicial tem maiúscula, número e
+     arroba; digitar às cegas erra, e o painel só diz "não conferem". */
+  .campo-senha{position:relative}
+  .campo-senha input{padding-right:2.6rem}
+  .olho{position:absolute;right:.25rem;top:.15rem;width:2.1rem;height:2.1rem;
+    display:flex;align-items:center;justify-content:center;
+    padding:0;margin:0;border:none;background:none;cursor:pointer;
+    color:var(--suave);border-radius:6px}
+  .olho:hover{color:var(--acento);background:var(--acento-fraco)}
+  .olho svg{width:1.1rem;height:1.1rem;display:block}
+  .olho .fechado{display:none}
+  .olho[aria-pressed="true"] .aberto{display:none}
+  .olho[aria-pressed="true"] .fechado{display:block}
+  .nota{margin:1.1rem 0 0;font-size:.76rem;color:var(--suave);line-height:1.5}
+  .nota code{background:var(--acento-fraco);color:var(--acento);
+    padding:.05rem .3rem;border-radius:4px;font-size:.95em}
+</style>
+</head>
+<body>
+  <form class="caixa" method="post" action="/entrar" autocomplete="on">
+    <input type="hidden" name="destino" value="{{ destino }}">
+
+    {% if tem_logo %}
+      <div class="marca">
+        <img class="logo-clara" src="/static/logo.png" alt="Logomarca">
+        <img class="logo-escura" alt="Logomarca"
+             src="/static/{{ 'logo-escura.png' if tem_logo_escura else 'logo.png' }}">
+      </div>
+    {% endif %}
+    <h1>Automação Financeira</h1>
+    <p class="sub">Autorizações de pagamento — T.I.</p>
+
+    {% if erro %}<div class="aviso">{{ erro }}</div>{% endif %}
+
+    <label for="email">E-mail</label>
+    <input id="email" name="email" type="email" required autofocus
+           autocomplete="username" placeholder="nome@empresa.com.br">
+
+    <label for="senha">Senha</label>
+    <div class="campo-senha">
+      <input id="senha" name="senha" type="password" required
+             autocomplete="current-password">
+      <button type="button" class="olho" id="olho" aria-pressed="false"
+              aria-controls="senha" aria-label="Mostrar a senha"
+              title="Mostrar a senha">
+        <svg class="aberto" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        <svg class="fechado" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M17.9 17.9A10.7 10.7 0 0 1 12 20C5 20 1 12 1 12a19.6 19.6 0 0 1 5.1-5.9"></path>
+          <path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 8 11 8a19.5 19.5 0 0 1-2.2 3.2"></path>
+          <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+          <line x1="2" y1="2" x2="22" y2="22"></line>
+        </svg>
+      </button>
+    </div>
+
+    <button type="submit">Entrar</button>
+
+    {% if sem_usuarios %}
+      <p class="nota">
+        Nenhum usuário cadastrado ainda. O primeiro é criado quando o painel
+        sobe — se esta mensagem persistir, rode
+        <code>python -m painel</code> pelo <code>painel.bat</code>.
+      </p>
+    {% endif %}
+  </form>
+<script>
+  /* Mostrar/ocultar a senha. O foco volta para o campo e o cursor para o fim,
+     senão quem clica no olho no meio da digitação perde o lugar. */
+  (function () {
+    var campo = document.getElementById("senha");
+    var olho = document.getElementById("olho");
+    if (!campo || !olho) return;
+    olho.addEventListener("click", function () {
+      var mostrando = campo.type === "text";
+      campo.type = mostrando ? "password" : "text";
+      olho.setAttribute("aria-pressed", String(!mostrando));
+      var rotulo = mostrando ? "Mostrar a senha" : "Ocultar a senha";
+      olho.setAttribute("aria-label", rotulo);
+      olho.title = rotulo;
+      campo.focus();
+      var fim = campo.value.length;
+      campo.setSelectionRange(fim, fim);
+    });
+  })();
+</script>
+</body>
+</html>

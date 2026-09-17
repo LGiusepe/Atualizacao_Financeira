@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block titulo %}E-mail{% endblock %}
+
+{% block conteudo %}
+{# Servidor velho não fornece `usuario` nem a rota que grava: melhor mostrar
+   só o aviso do topo do que um formulário que devolve "Not Found". #}
+{% set pode_editar = usuario is defined and usuario %}
+<style>
+  .linha-par{display:grid;grid-template-columns:15rem 1fr;gap:.8rem;
+    align-items:start;padding:.42rem 0}
+  .linha-par>label{margin:.35rem 0 0;text-transform:none;font-size:.82rem;
+    letter-spacing:0}
+  .linha-par input{width:100%}
+  .apoio-campo{font-size:.74rem;color:var(--suave);margin-top:.22rem}
+  .area-texto{width:100%;box-sizing:border-box;font:inherit;font-size:.84rem;
+    line-height:1.5;resize:vertical;padding:.55rem .65rem;border-radius:6px;
+    border:1px solid var(--borda);background:var(--fundo);color:var(--texto)}
+  /* A prévia tem que sair igual ao e-mail: fonte de largura fixa e quebra
+     preservada, senão três linhas viram um parágrafo e ninguém confere. */
+  .caixa-corpo{white-space:pre-wrap;font-size:.84rem;margin:.3rem 0 0;
+    padding:.6rem .7rem;background:var(--fundo);border:1px solid var(--borda);
+    border-radius:6px}
+  .assinatura-previa{white-space:pre-wrap;font-size:.86rem;line-height:1.55;
+    margin:0;padding:.7rem .8rem;background:var(--fundo);
+    border-left:3px solid var(--ok);border-radius:4px}
+  .vazio{color:var(--suave);font-style:italic}
+  @media (max-width: 720px){
+    .linha-par{grid-template-columns:1fr}
+    .linha-par>label{margin:0}
+  }
+</style>
+
+<h1>E-mail</h1>
+<p class="sub">
+  Como a sua mensagem é montada no Outlook. Função, setor e texto padrão são
+  <strong>seus</strong> — ficam no seu cadastro e não mudam o e-mail de mais
+  ninguém que usa este painel.
+</p>
+
+{% if erro | default('') %}
+  <div class="aviso perigo">
+    <strong>Nada foi salvo.</strong> {{ erro | default('') }}
+  </div>
+{% endif %}
+{% if guardado | default('') %}
+  <div class="aviso"><span style="color:var(--ok);font-weight:600">✓ {{ guardado | default('') }}</span></div>
+{% endif %}
+
+{% if molde_ja_assinado | default(false) %}
+  <div class="aviso perigo">
+    <strong>O texto padrão já termina com uma assinatura digitada à mão.</strong>
+    Ela foi escrita direto no texto, antes desta tela existir — então o
+    fornecedor vai receber o seu nome <strong>duas vezes</strong>: a linha
+    antiga e a assinatura montada aqui.
+    Some quando você preencher função e setor aqui com o que está escrito lá
+    — aí os dois textos passam a ser o mesmo e o painel não repete. Melhor
+    ainda: tire as linhas do fim do texto (o seu, abaixo, ou o de todo mundo
+    em <a href="/configuracao/parametros?competencia={{ competencia }}">Parâmetros do sistema</a>)
+    ou troque-as por <span class="mono">{assinatura}</span>.
+  </div>
+{% endif %}
+
+{% if pode_editar %}
+<form method="post" action="/configuracao/email">
+<input type="hidden" name="competencia" value="{{ competencia }}">
+
+<h2>Sua assinatura</h2>
+<div class="cartao">
+  <div class="linha-par">
+    <label>Nome</label>
+    <div>
+      <input value="{{ usuario.nome or usuario.email }}" disabled>
+      <div class="apoio-campo">
+        Primeira linha da assinatura. Muda em
+        <a href="/configuracao/usuarios?competencia={{ competencia }}">Configuração › Usuários</a>,
+        com um administrador.
+      </div>
+    </div>
+  </div>
+
+  <div class="linha-par">
+    <label for="funcao">Função</label>
+    <div>
+      <input id="funcao" name="funcao" value="{{ usuario.funcao }}"
+             autocomplete="off" placeholder="Analista de Sistemas">
+      <div class="apoio-campo">
+        Segunda linha. Em branco, a linha some — a assinatura não fica com
+        buraco no meio.
+      </div>
+    </div>
+  </div>
+
+  <div class="linha-par">
+    <label for="setor">Setor</label>
+    <div>
+      <input id="setor" name="setor" value="{{ usuario.setor }}"
+             autocomplete="off" placeholder="TI">
+      <div class="apoio-campo">
+        Terceira linha, junto do nome da empresa: <span class="mono">setor | empresa</span>.
+      </div>
+    </div>
+  </div>
+
+  <div class="linha-par">
+    <label for="assinatura_empresa">Nome da empresa</label>
+    <div>
+      {% if pode_editar_empresa | default(false) %}
+        <input id="assinatura_empresa" name="assinatura_empresa"
+               value="{{ empresa | default('') }}" autocomplete="off">
+        <div class="apoio-campo">
+          Vale para <strong>todo mundo</strong> que usa o painel — por isso só
+          administrador altera. Grava em <span class="mono">config/settings.yaml</span>,
+          com cópia do arquivo anterior em <span class="mono">dados/backups/</span>.
+        </div>
+      {% else %}
+        {# Campo de texto, e não input desabilitado: input desabilitado ainda
+           parece editável e convida ao clique. Quem não é administrador não
+           manda este campo — e o servidor recusa mesmo que mande. #}
+        <p style="margin:.35rem 0 0">
+          {{ empresa | default('') or '—' }}
+        </p>
+        <div class="apoio-campo">
+          É o mesmo para todo mundo que usa o painel: só um administrador muda.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="linha-par">
+    <label>Como vai sair</label>
+    <div>
+      {% if assinatura | default('') %}
+        <p class="assinatura-previa">{{ assinatura }}</p>
+      {% else %}
+        <p class="assinatura-previa vazio">
+          Sem assinatura — preencha função e setor acima.
+        </p>
+      {% endif %}
+      <div class="apoio-campo">
+        Esta prévia é do que está <em>salvo</em>. Salve para vê-la mudar.
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Seu texto padrão</h2>
+<div class="cartao">
+  <div class="linha-par">
+    <label for="corpo_email">Corpo da mensagem</label>
+    <div>
+      <textarea id="corpo_email" name="corpo_email" rows="14"
+                class="area-texto" spellcheck="true">{{ corpo_pessoal | default('') }}</textarea>
+      <div class="apoio-campo">
+        <strong>Deixe em branco para usar o texto padrão do painel</strong> (o
+        que está logo abaixo). Preenchendo, o seu vale só para você.<br>
+        Trechos que o painel troca:
+        <span class="mono">{empresa}</span>
+        <span class="mono">{competencia_extenso}</span>
+        <span class="mono">{vencimento}</span>
+        <span class="mono">{valor}</span>
+        <span class="mono">{trecho_cidade}</span>
+        <span class="mono">{assinatura}</span>.<br>
+        A assinatura entra sozinha no fim — só escreva
+        <span class="mono">{assinatura}</span> se quiser em outro lugar.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="barra-acoes" style="margin:1rem 0 2rem">
+  <button class="principal" type="submit">Salvar</button>
+  <span class="mono" style="color:var(--suave);font-size:.78rem;align-self:center">
+    função, setor e texto vão para o seu cadastro · nada é escrito no OneDrive
+  </span>
+</div>
+</form>
+
+<h2>O texto padrão do painel</h2>
+<div class="cartao">
+  <p class="apoio-campo" style="margin-top:0">
+    É este que vale enquanto o seu campo acima estiver em branco. Ele é de
+    todo mundo e muda em Configuração › Parâmetros do sistema.
+  </p>
+  <pre class="caixa-corpo">{{ corpo_global | default('') }}</pre>
+</div>
+{% else %}
+<div class="aviso perigo">
+  Esta tela é nova e o painel que está no ar ainda não a conhece. Feche com
+  <span class="mono">parar-painel.bat</span> e abra de novo com
+  <span class="mono">painel.bat</span>.
+</div>
+{% endif %}
+{% endblock %}

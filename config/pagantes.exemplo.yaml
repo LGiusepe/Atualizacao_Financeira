@@ -1,0 +1,15 @@
+# Empresas que PAGAM a fatura — campo PAGANTE (B7) da autorização.
+# Copie para `pagantes.yaml`. Editável pelo painel: Configuração > Pagantes.
+#
+# `nome_na_planilha` é como a empresa aparece na tabela de consulta do
+# template. Serve para quando a razão social mudou e a planilha não
+# acompanhou: sem correspondência, o VLOOKUP do CNPJ devolve #N/D, e a
+# automação escreve o CNPJ daqui no lugar da fórmula, avisando na tela.
+
+pagantes:
+  - nome: EMPRESA EXEMPLO LTDA
+    cnpj: 00.000.000/0001-00
+    nome_na_planilha: NOME ANTIGO NA TABELA
+    banco: 237 – BRADESCO
+    agencia: "0001"
+    conta: 00000-0

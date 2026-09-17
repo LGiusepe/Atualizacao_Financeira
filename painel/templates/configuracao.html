@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block titulo %}Faturas ativas · {{ competencia.extenso }}{% endblock %}
+
+{% block conteudo %}
+<style>
+  /* O .interruptor mora no base.html: Faturas ativas e Permissões usam a
+     mesma caixa, e duas cópias da regra viravam duas aparências na primeira
+     vez que alguém mexesse numa delas. Aqui fica só o que é desta tela. */
+
+  /* Linha desmarcada = conta fora deste mês: apagada, sem sumir. */
+  .linha-conta{transition:opacity .15s,filter .15s}
+  .linha-conta.inativa{opacity:.42;filter:grayscale(.85)}
+  .linha-conta.inativa td{background:color-mix(in srgb,var(--fundo) 55%,transparent)}
+  .linha-conta.inativa a{color:var(--suave);text-decoration:none}
+  .linha-conta.inativa .pastilha{background:var(--pendente-fraco);color:var(--pendente)}
+  /* A caixa continua nítida: é onde se clica para reativar. */
+  .linha-conta.inativa .interruptor{opacity:1;filter:none}
+  .linha-conta.inativa:hover{opacity:.8;filter:grayscale(.3)}
+  .selo-fora{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--suave);font-weight:600}
+
+  /* Campos que vivem dentro da tabela: discretos até você tocar neles. */
+  .celula{
+    width:100%;font:inherit;font-size:.85rem;padding:.25rem .4rem;
+    border:1px solid transparent;border-radius:5px;
+    background:transparent;color:var(--texto);
+    transition:border-color .12s,background .12s}
+  .celula:hover{border-color:var(--borda);background:var(--fundo)}
+  .celula:focus{outline:none;border-color:var(--acento);background:var(--fundo)}
+  .celula::placeholder{color:var(--suave);opacity:.6}
+  .celula.dia{text-align:center;font-variant-numeric:tabular-nums}
+  .celula.nome-conta{width:100%;font-weight:550}
+  .celula.dinheiro{text-align:right;font-variant-numeric:tabular-nums}
+  /* Tira as setinhas do campo numérico: elas roubam espaço na coluna. */
+  .celula[type=number]{-moz-appearance:textfield}
+  .celula[type=number]::-webkit-outer-spin-button,
+  .celula[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+  .com-prefixo{display:flex;align-items:center;gap:.15rem}
+  .prefixo{font-size:.74rem;color:var(--suave);flex:0 0 auto}
+
+  /* Linha com edição pendente ganha um traço, para não perder o que mudou. */
+  .linha-conta.editada td{box-shadow:inset 2px 0 0 var(--acento)}
+  .aviso-edicao{display:none;align-items:center;gap:.5rem}
+  .aviso-edicao.ativo{display:flex}
+</style>
+
+<h1>Faturas ativas</h1>
+<p class="sub">
+  Quais contas valem em {{ competencia.extenso }} e cadastro de conta nova.
+  A escolha é por mês — desmarcar aqui não apaga nada nem mexe nos meses
+  anteriores.
+</p>
+
+
+{% if not mes_configurado %}
+  <div class="aviso simulacao">
+    <strong>{{ competencia.extenso }} ainda não foi configurado.</strong>
+    A lista abaixo veio do registro. Salve para fixar o conjunto deste mês.
+  </div>
+{% endif %}
+
+{# --------------------------------------------------- copiar de outro mês #}
+{% if meses_para_copiar %}
+<div class="cartao compacto">
+  <form method="post" action="/configuracao/copiar" class="campos">
+    <input type="hidden" name="competencia" value="{{ competencia }}">
+    <div>
+      <label for="origem">Repetir a configuração de outro mês</label>
+      <select id="origem" name="origem" required>
+        {% for m in meses_para_copiar %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+    <button onclick="return confirm('Substituir as contas de {{ competencia.nome_mes }} pelas do mês escolhido?');">
+      Copiar para {{ competencia.nome_mes }}
+    </button>
+    <span class="mono" style="align-self:center">
+      traz o mesmo conjunto de contas ativas — em vez de remarcar tudo na mão
+    </span>
+  </form>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------- contas do mês #}
+<form method="post" action="/configuracao/ativas">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
+
+  <div class="cartao">
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                gap:1rem;flex-wrap:wrap;margin-bottom:.6rem">
+      <h3 style="margin:0">Contas de {{ competencia.extenso }}</h3>
+      <div class="barra-acoes" style="margin:0">
+        <button type="button" class="discreto" onclick="marcarTodas(true)">Marcar todas</button>
+        <button type="button" class="discreto" onclick="marcarTodas(false)">Desmarcar todas</button>
+        <span class="mono" id="contador"></span>
+      </div>
+    </div>
+
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr><th style="width:3rem">Ativa</th><th>Conta</th>
+              <th>Fornecedor na planilha</th>
+              <th style="width:4.5rem">Venc.</th>
+              <th style="width:8rem">Valor aprox.</th>
+              <th style="width:8rem">Grupo</th>
+              <th>Pendências</th></tr>
+        </thead>
+        <tbody>
+          {% for c in todas %}
+          {% set marcada = c.id in ativas_ids %}
+          <tr class="linha-conta {{ '' if marcada else 'inativa' }}">
+            <td style="text-align:center">
+              <input type="checkbox" name="ativa" value="{{ c.id }}" class="interruptor"
+                     id="interruptor-{{ c.id }}" {{ 'checked' if marcada }}
+                     aria-label="Ativar {{ c.rotulo }} em {{ competencia.extenso }}">
+            </td>
+            <td>
+              {# Nome editável. É rótulo, e só: não mexe em pasta nem em
+                 caminho de arquivo — isso se faz em Parâmetros do sistema. #}
+              <input class="celula nome-conta" name="nome__{{ c.id }}"
+                     value="{{ c.apelido or '' }}"
+                     placeholder="{{ c.rotulo_das_pastas }}"
+                     aria-label="Nome de {{ c.rotulo }}">
+              <div class="mono">{{ c.id }}
+                {%- if c.apelido %} · <span class="selo-fora"
+                  title="O nome acima é um apelido; a pasta continua {{ c.rotulo_das_pastas }}"
+                  >pasta: {{ c.rotulo_das_pastas }}</span>{% endif -%}
+                {%- if not marcada %} · <span class="selo-fora">fora deste mês</span>{% endif -%}
+              </div>
+            </td>
+            <td class="mono">
+              {{ c.chaves_planilha[0] if c.chaves_planilha else '— sem vínculo —' }}
+            </td>
+            <td>
+              <input class="celula dia" type="number" min="1" max="31"
+                     name="venc__{{ c.id }}" value="{{ c.vencimento_dia or '' }}"
+                     placeholder="—"
+                     aria-label="Dia do vencimento de {{ c.rotulo }}">
+            </td>
+            <td>
+              <div class="com-prefixo">
+                <span class="prefixo">R$</span>
+                <input class="celula dinheiro" name="valor__{{ c.id }}"
+                       value="{{ '%.2f'|format(c.valor_estimado)|replace('.', ',') if c.valor_estimado else '' }}"
+                       placeholder="—" inputmode="decimal"
+                       aria-label="Valor aproximado de {{ c.rotulo }}">
+              </div>
+            </td>
+            <td>
+              <input class="celula" name="grupo__{{ c.id }}" list="grupos"
+                     value="{{ c.email.grupo or '' }}" placeholder="—"
+                     aria-label="Grupo de e-mail de {{ c.rotulo }}">
+            </td>
+            <td>
+              {% if not c.modelo_base %}
+                <span class="pastilha erro">sem planilha base</span>
+              {% elif not c.chaves_planilha %}
+                <span class="pastilha atencao">sem vínculo</span>
+              {% else %}
+                <span class="pastilha ok">pronta</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <datalist id="grupos">
+      {% for g in grupos_existentes %}<option value="{{ g }}">{% endfor %}
+    </datalist>
+
+    <div class="barra-acoes">
+      <button class="principal" type="submit">Salvar</button>
+      <span class="aviso-edicao mono" id="aviso-edicao">
+        <span class="pastilha atencao" id="qtd-edicoes"></span>
+        alteração(ões) ainda não salva(s)
+      </span>
+    </div>
+    <p class="mono" style="margin:.6rem 0 0">
+      Marcar/desmarcar vale só para {{ competencia.nome_mes }}.
+      Vencimento, valor aproximado e grupo são da conta e valem para todos os
+      meses. Contas com o mesmo grupo saem num e-mail só, um anexo por fatura.
+      O <strong>valor aproximado</strong> só aparece na tela enquanto a conta
+      não tiver um mês pago atrás dela: a partir do primeiro, o previsto passa
+      a ser o último valor pago, que se atualiza sozinho.
+    </p>
+  </div>
+</form>
+
+{# ------------------------------------------------------- conta nova #}
+<div class="cartao">
+  <h3 style="margin-top:0">Cadastrar conta nova</h3>
+  <p class="explica">
+    Para fornecedor que entrou agora, ou para o que já está na planilha mas
+    ainda não tem pasta de autorização. Depois de cadastrar, aponte a planilha
+    base rodando
+    <span class="mono">python scripts/gerar_registro_fornecedores.py</span>.
+  </p>
+  <form method="post" action="/configuracao/nova" class="campos">
+    <input type="hidden" name="competencia" value="{{ competencia }}">
+    <div>
+      <label for="pasta">Pasta no OneDrive *</label>
+      <input id="pasta" name="pasta" list="pastas-existentes" required
+             style="width:15rem" placeholder="GOSAT TELECOM">
+      <datalist id="pastas-existentes">
+        {% for p in pastas %}<option value="{{ p }}">{% endfor %}
+      </datalist>
+    </div>
+    <div>
+      <label for="subunidade">Sub-unidade</label>
+      <input id="subunidade" name="subunidade" style="width:11rem"
+             placeholder="cidade, linha ou serviço">
+    </div>
+    <div>
+      <label for="chave_planilha">Fornecedor na planilha</label>
+      <input id="chave_planilha" name="chave_planilha" style="width:17rem"
+             placeholder="texto exato da coluna FORNECEDOR">
+    </div>
+    <div>
+      <label for="formato_mes">Formato da pasta de mês</label>
+      <select id="formato_mes" name="formato_mes">
+        {% for f in formatos %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="vencimento_dia">Dia do vencimento</label>
+      <input id="vencimento_dia" name="vencimento_dia" type="number" min="1" max="31"
+             style="width:6rem">
+    </div>
+    <div>
+      <label style="text-transform:none;font-size:.82rem">
+        <input type="checkbox" name="ativar_neste_mes" value="sim" checked>
+        Ativar em {{ competencia.nome_mes }}
+      </label>
+    </div>
+    <button class="principal" type="submit">Cadastrar</button>
+  </form>
+</div>
+
+<div class="cartao compacto">
+  <h3 style="margin-top:0">Arquivos de configuração</h3>
+  <table>
+    <tbody>
+      <tr><td style="width:16rem;color:var(--suave)">Registro de contas</td>
+          <td class="mono">config/fornecedores.yaml</td></tr>
+      <tr><td style="color:var(--suave)">Caminhos, e-mail e travas</td>
+          <td class="mono">config/settings.yaml</td></tr>
+      <tr><td style="color:var(--suave)">Contas ativas por mês</td>
+          <td class="mono">dados/estado.db (tabela conta_do_mes)</td></tr>
+    </tbody>
+  </table>
+  <div class="barra-acoes">
+    <form class="linha" method="post" action="/recarregar">
+      <input type="hidden" name="competencia" value="{{ competencia }}">
+      <button>Recarregar configuração do disco</button>
+    </form>
+    <a class="botao" href="/diagnostico?competencia={{ competencia }}">Diagnóstico</a>
+  </div>
+</div>
+
+<script>
+/* A linha acende e apaga junto com a caixa, sem esperar o Salvar —
+   assim dá para ver o conjunto do mês tomando forma enquanto você marca. */
+function refletirLinha(caixa) {
+  const linha = caixa.closest('.linha-conta');
+  if (!linha) return;
+  linha.classList.toggle('inativa', !caixa.checked);
+  const selo = linha.querySelector('.selo-fora');
+  if (caixa.checked && selo) {
+    selo.previousSibling.textContent = selo.previousSibling.textContent.replace(' · ', '');
+    selo.remove();
+  }
+}
+
+function marcarTodas(valor) {
+  document.querySelectorAll('.interruptor').forEach(function (caixa) {
+    caixa.checked = valor;
+    refletirLinha(caixa);
+  });
+  atualizarContador();
+}
+
+function atualizarContador() {
+  const total = document.querySelectorAll('.interruptor').length;
+  const marcadas = document.querySelectorAll('.interruptor:checked').length;
+  const alvo = document.getElementById('contador');
+  if (alvo) alvo.textContent = marcadas + ' de ' + total + ' ativas neste mês';
+}
+
+document.addEventListener('change', function (evento) {
+  if (evento.target.classList && evento.target.classList.contains('interruptor')) {
+    refletirLinha(evento.target);
+    atualizarContador();
+  }
+});
+
+/* Marca visualmente o que foi editado e ainda não salvo — a tabela é longa
+   e é fácil rolar, mudar três campos e esquecer de clicar em Salvar. */
+(function () {
+  const originais = new Map();
+  document.querySelectorAll('.celula').forEach(function (campo) {
+    originais.set(campo, campo.value);
+  });
+
+  function conferirEdicoes() {
+    let mudados = 0;
+    originais.forEach(function (valor, campo) {
+      const mudou = campo.value !== valor;
+      const linha = campo.closest('.linha-conta');
+      if (linha) {
+        // A linha só perde o traço quando NENHUM campo dela está diferente.
+        const algumMudou = [...linha.querySelectorAll('.celula')].some(function (c) {
+          return c.value !== originais.get(c);
+        });
+        linha.classList.toggle('editada', algumMudou);
+      }
+      if (mudou) mudados++;
+    });
+
+    const aviso = document.getElementById('aviso-edicao');
+    const quantidade = document.getElementById('qtd-edicoes');
+    if (aviso && quantidade) {
+      quantidade.textContent = mudados;
+      aviso.classList.toggle('ativo', mudados > 0);
+    }
+  }
+
+  document.addEventListener('input', function (evento) {
+    if (evento.target.classList && evento.target.classList.contains('celula')) {
+      conferirEdicoes();
+    }
+  });
+
+  /* Salvar É uma navegação. Sem desarmar o aviso, o navegador pergunta
+     "Sair do site? As alterações podem não ser salvas" bem na hora em que
+     elas estão sendo salvas — e, enquanto a caixa está aberta, a tela de
+     carregamento fica girando atrás dela, parecendo travamento. */
+  let salvando = false;
+  document.addEventListener('submit', function () { salvando = true; }, true);
+
+  window.addEventListener('beforeunload', function (evento) {
+    if (salvando) return;
+    const pendente = [...originais.entries()].some(function (par) {
+      return par[0].value !== par[1];
+    });
+    if (pendente) evento.preventDefault();
+  });
+})();
+
+atualizarContador();
+</script>
+{% endblock %}

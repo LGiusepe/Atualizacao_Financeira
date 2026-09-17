@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block titulo %}Manutenção da bancada{% endblock %}
+
+{#
+  A tela existe para que apagar nunca seja um clique às cegas: primeiro a
+  lista exata do que sairia, com o motivo de cada linha, e só então o botão.
+  É o mesmo desenho da publicação — plano, confirmação, execução.
+#}
+
+{% block conteudo %}
+<h1>Manutenção da bancada</h1>
+<p class="sub">
+  A pasta <span class="mono">Painel Temp</span> é área de trabalho, não arquivo:
+  o que vale de verdade já está em “Autorizações de pagamento”, e é de lá que
+  nada — <strong>nada</strong> — é apagado, em nenhuma configuração.
+</p>
+
+{% if erro | default('') %}
+  <div class="aviso perigo">{{ erro }}</div>
+{% endif %}
+{% if guardado | default('') %}
+  <div class="aviso"><span style="color:var(--ok);font-weight:600">✓ {{ guardado }}</span></div>
+{% endif %}
+
+<div class="cartao rolagem">
+  <h3 style="margin-top:0">O que a bancada está ocupando</h3>
+  <table>
+    <thead><tr><th>Pasta</th><th>Arquivos</th><th>Espaço</th><th>Caminho</th></tr></thead>
+    <tbody>
+      {% for nome, dados in (ocupacao | default({})).items() %}
+      <tr>
+        <td><strong>{{ nome }}</strong></td>
+        <td>{{ dados.arquivos }}</td>
+        <td>{{ mb(dados.bytes) }}</td>
+        <td><span class="mono" style="font-size:.78rem">{{ dados.caminho }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="cartao compacto">
+  <h3 style="margin-top:0">As regras em vigor</h3>
+  <p style="margin:0;font-size:.88rem;color:var(--suave)">
+    Ficam <strong>{{ regras.meses_de_trabalho }}</strong> competência(s) em
+    <span class="mono">trabalho/</span> e <strong>{{ regras.dias_de_backup }}</strong>
+    dias de backup (os 3 mais recentes nunca saem).
+    A entrada é recolhida ao concluir as oito etapas:
+    <strong>{{ 'sim' if regras.limpar_entrada_ao_concluir else 'não' }}</strong>.
+    Varredura automática no primeiro acesso do mês:
+    <strong>{{ 'sim' if regras.limpeza_mensal else 'não' }}</strong>.
+    {% if ultima_limpeza %}Última varredura: <strong>{{ ultima_limpeza }}</strong>.{% endif %}
+    Para mudar, edite o bloco <span class="mono">manutencao</span> em
+    <span class="mono">config/settings.yaml</span>.
+  </p>
+</div>
+
+{% if falha_do_plano %}
+  <div class="aviso perigo">Não consegui montar o plano: {{ falha_do_plano }}</div>
+{% endif %}
+
+{% set alvos = plano.alvos | default([]) %}
+{% if not alvos %}
+  <div class="cartao"><p class="vazio">Nada a apagar — tudo que está na bancada
+    ainda é necessário ou não foi encontrado no destino.</p></div>
+{% else %}
+<div class="cartao rolagem">
+  <h3 style="margin-top:0">
+    O que sairia: {{ alvos | length }} arquivo(s), {{ mb(plano.bytes_a_liberar) }}
+  </h3>
+  <p style="margin:.2rem 0 .8rem;font-size:.85rem;color:var(--suave)">
+    Cada linha foi conferida byte a byte (SHA-256) contra a pasta de destino,
+    ou pertence a um mês que fechou as oito etapas.
+  </p>
+  <table>
+    <thead><tr><th>Pasta</th><th>Arquivo</th><th>Tamanho</th><th>Por quê</th></tr></thead>
+    <tbody>
+      {% for a in alvos %}
+      <tr>
+        <td><span class="pastilha pendente">{{ a.grupo }}</span></td>
+        <td><span class="mono" style="font-size:.78rem">{{ a.caminho }}</span></td>
+        <td>{{ mb(a.tamanho) }}</td>
+        <td style="font-size:.82rem;color:var(--suave)">{{ a.motivo }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="cartao">
+  <form method="post" action="/configuracao/manutencao">
+    <input type="hidden" name="competencia" value="{{ competencia }}">
+    <label style="display:block;margin-bottom:.7rem">
+      <input type="checkbox" name="confirmar" value="sim" required>
+      Confirmo que li a lista acima e quero apagar estes
+      {{ alvos | length }} arquivo(s) da bancada.
+    </label>
+    <button type="submit" class="perigo">Apagar da bancada</button>
+  </form>
+</div>
+{% endif %}
+
+{% set mantidos = plano.mantidos | default([]) %}
+{% if mantidos %}
+<details class="cartao">
+  <summary style="cursor:pointer;font-weight:600">
+    {{ mantidos | length }} arquivo(s) mantidos, e por quê
+  </summary>
+  <div class="rolagem" style="margin-top:.8rem">
+    <table>
+      <thead><tr><th>Pasta</th><th>Arquivo</th><th>Motivo</th></tr></thead>
+      <tbody>
+        {% for m in mantidos %}
+        <tr>
+          <td><span class="pastilha pendente">{{ m.grupo }}</span></td>
+          <td><span class="mono" style="font-size:.78rem">{{ m.caminho }}</span></td>
+          <td style="font-size:.82rem;color:var(--suave)">{{ m.motivo }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+{% endblock %}

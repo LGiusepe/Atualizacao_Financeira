@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Diagnóstico{% endblock %}
+
+{% block conteudo %}
+<h1>Diagnóstico do ambiente</h1>
+<p class="sub">Confira aqui antes de rodar pela primeira vez no mês.</p>
+
+<div class="cartao">
+  <table>
+    <tbody>
+      {% for nome, ok, detalhe in verificacoes %}
+      <tr>
+        <td style="width:12rem"><strong>{{ nome }}</strong></td>
+        <td style="width:6rem">
+          <span class="pastilha {{ 'ok' if ok else 'erro' }}">{{ 'ok' if ok else 'falhou' }}</span>
+        </td>
+        <td class="mono">{{ detalhe }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Caminhos em uso</h2>
+<div class="cartao compacto">
+  <table>
+    <tbody>
+      <tr><td style="width:14rem;color:var(--suave)">OneDrive</td>
+          <td class="mono">{{ ambiente.caminhos.onedrive }}</td></tr>
+      <tr><td style="color:var(--suave)">Autorizações de pagamento</td>
+          <td class="mono">{{ ambiente.caminhos.autorizacoes }}</td></tr>
+      <tr><td style="color:var(--suave)">Planilha de controle</td>
+          <td class="mono">{{ ambiente.caminhos.planilha_contas }}</td></tr>
+      <tr><td style="color:var(--suave)">Área de trabalho local</td>
+          <td class="mono">{{ ambiente.caminhos.trabalho }}</td></tr>
+      <tr><td style="color:var(--suave)">Entrada manual</td>
+          <td class="mono">{{ ambiente.caminhos.entrada }}</td></tr>
+      <tr><td style="color:var(--suave)">Backups</td>
+          <td class="mono">{{ ambiente.caminhos.backups }}</td></tr>
+    </tbody>
+  </table>
+  <div class="barra-acoes">
+    <form class="linha" method="post" action="/recarregar">
+      <input type="hidden" name="competencia" value="{{ competencia }}">
+      <button>Recarregar configuração</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

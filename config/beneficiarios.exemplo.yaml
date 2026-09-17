@@ -1,0 +1,17 @@
+# Quem RECEBE o pagamento — campo FORNECEDOR (C13) e os dados bancários.
+# Copie para `beneficiarios.yaml`. Editável pelo painel.
+#
+# Campo em branco não é escrito na planilha: a célula fica como estava no
+# modelo do mês anterior, em vez de ser apagada.
+#
+# Meio de pagamento não fica aqui: varia de uma fatura para outra do mesmo
+# fornecedor, então é escolhido na etapa que preenche a autorização.
+
+beneficiarios:
+  - nome: FORNECEDOR EXEMPLO S/A
+    cnpj: 00.000.000/0001-00
+    contato: Nome do contato
+    telefone: (00) 00000-0000
+    banco: 341 - ITAU
+    agencia: "0000"
+    conta: 00000-0

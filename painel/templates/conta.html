@@ -1,0 +1,906 @@
+{% extends "base.html" %}
+{% block titulo %}{{ conta.rotulo }} · {{ competencia.extenso }}{% endblock %}
+
+{% block conteudo %}
+{% set r = foco.resultado %}
+{% set etapa = foco.etapa %}
+{# Se o painel estiver rodando uma versão antiga do app.py, `sugestao` não
+   existe. O template recarrega do disco, o código Python não — a tela quebrava
+   com 500. Aqui ela só aparece vazia, e o aviso abaixo diz o que fazer. #}
+{% set sugestao = sugestao | default({}, true) %}
+{% set painel_desatualizado = sugestao is not mapping or 'valor' not in sugestao %}
+
+<p class="sub" style="margin-bottom:.4rem">
+  <a href="/?competencia={{ competencia }}">&larr; Contas do mês</a>
+</p>
+
+{% if painel_desatualizado %}
+  {# O Jinja recarrega o template do disco; o Python não. Rodando um painel
+     aberto antes da atualização, a tela mostra recursos que o servidor ainda
+     não tem — e eles falham com "Not Found" ou erro interno. #}
+  <div class="aviso perigo">
+    <strong>O painel precisa ser reiniciado.</strong>
+    A tela foi atualizada, mas o programa que está no ar ainda é o de antes —
+    por isso a pré-visualização do PDF e os campos preenchidos automaticamente
+    não funcionam. Feche a janela preta do painel e abra
+    <span class="mono">painel.bat</span> de novo.
+  </div>
+{% endif %}
+<h1>{{ conta.rotulo }}</h1>
+<p class="sub">
+  {{ competencia.extenso }} ·
+  <span class="mono">{{ conta.caminho_relativo(competencia) }}</span>
+  {% if destino_existe %}<span class="pastilha atencao">pasta já existe</span>
+  {% else %}<span class="pastilha pendente">pasta será criada</span>{% endif %}
+  {% if conta.deslocamento_pasta %}
+    {# Sem esta linha o mês da pasta parece erro de conta. #}
+    <span class="pastilha pulado"
+          title="Esta conta arquiva a autorização na pasta do mês seguinte ao do vencimento.">
+      pasta {{ conta.deslocamento_pasta }} mês à frente
+    </span>
+  {% endif %}
+</p>
+
+{# ---------------------------------------------------------------- trilha #}
+<div class="trilha-passos">
+  {% for item in trilha %}
+    {% set classe = 'feita' if item.concluida else ('atual' if item.etapa == etapa else ('livre' if item.liberada else 'travada')) %}
+    {% if item.liberada %}
+      <a class="passo {{ classe }}"
+         href="/conta/{{ conta.id }}?competencia={{ competencia }}&etapa={{ item.etapa.value }}"
+         title="{{ item.etapa.rotulo }}">
+        <span class="bolha">{{ '✓' if item.concluida else item.numero }}</span>
+        <span class="titulo">{{ item.etapa.rotulo }}</span>
+      </a>
+    {% else %}
+      <span class="passo travada" title="Conclua a etapa anterior primeiro">
+        <span class="bolha">🔒</span>
+        <span class="titulo">{{ item.etapa.rotulo }}</span>
+      </span>
+    {% endif %}
+  {% endfor %}
+</div>
+<p class="sub" style="text-align:center;margin:.2rem 0 1.2rem">
+  {{ concluidas }} de {{ trilha|length }} etapas concluídas
+</p>
+
+{# ------------------------------------------------------------ etapa atual #}
+<div class="palco">
+  <div class="palco-topo">
+    <div>
+      <div class="palco-numero">Etapa {{ foco.numero }} de {{ trilha|length }}</div>
+      <h2 style="margin:.1rem 0 0">{{ etapa.rotulo }}</h2>
+    </div>
+    <div style="text-align:right">
+      <span class="pastilha {{ CORES_SITUACAO[foco.situacao][0] }}">{{ CORES_SITUACAO[foco.situacao][1] }}</span>
+      {% if foco.sensivel %}<div class="cadeado">grava fora de dados/ — exige confirmação</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="palco-corpo">
+
+    {# ------------------------------------------------- 1. coleta + upload #}
+    {% if etapa == Etapa.COLETA %}
+      <p class="explica">
+        Suba aqui os arquivos <strong>desta fatura</strong>: boleto, nota fiscal
+        e demonstrativo. Pode mandar todos de uma vez — a automação identifica o
+        que é cada um e monta na ordem certa.
+        <br>Só entra o que você mandar aqui, e vale só para
+        <strong>{{ competencia }}</strong>: não há pasta sendo vigiada, então
+        nada de outro mês aparece sozinho.
+      </p>
+
+      {% if recusados %}
+        <div class="aviso perigo">
+          <strong>{{ recusados|length }} arquivo(s) não foram aceitos</strong> —
+          só entram PDF, XML, XLSX, PNG e JPG.
+          <ul class="lista-arquivos">
+            {% for nome in recusados %}<li class="mono">{{ nome }}</li>{% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data"
+            action="/conta/{{ conta.id }}/upload" class="soltar" id="form-envio"
+            data-ja-na-pasta='{{ arquivos_da_competencia | tojson }}'>
+        <input type="hidden" name="competencia" value="{{ competencia }}">
+        <label for="arquivos" class="area-soltar" id="area">
+          <strong>Clique para escolher</strong> ou arraste os arquivos aqui
+          <span class="mono">PDF, XML, XLSX, PNG, JPG</span>
+          <span id="escolhidos" class="escolhidos"></span>
+        </label>
+        <input id="arquivos" name="arquivos" type="file" multiple
+               accept=".pdf,.xml,.xlsx,.xls,.png,.jpg,.jpeg" hidden>
+
+        {# Preenchida pelo JS: nome, tamanho e o que há de errado com cada um. #}
+        <ul class="fila-envio" id="fila" hidden></ul>
+        <p class="recado-fila" id="recado" hidden></p>
+
+        <button class="principal" type="submit" id="botao-envio">Enviar e coletar</button>
+      </form>
+
+      {% if pdfs_travados %}
+        <div class="aviso alerta" style="margin-top:1rem">
+          <strong>{{ pdfs_travados|length }} PDF(s) estão protegidos por senha.</strong>
+          Sem ela, esses arquivos não entram no PDF final e o anexo vai
+          incompleto. Faturas Vivo e Claro costumam usar o CPF do titular ou o
+          CNPJ, só os números.
+          <ul class="lista-arquivos">
+            {% for nome in pdfs_travados %}<li class="mono">{{ nome }}</li>{% endfor %}
+          </ul>
+          <form method="post" action="/conta/{{ conta.id }}/senha-pdf"
+                style="display:flex;gap:.4rem;margin-top:.7rem;flex-wrap:wrap">
+            <input type="hidden" name="competencia" value="{{ competencia }}">
+            <input name="senha" type="password" required style="width:14rem"
+                   placeholder="senha do PDF" autocomplete="off">
+            <button class="principal">Testar e guardar</button>
+          </form>
+          <div class="mono" style="margin-top:.4rem">
+            A senha é testada antes de guardar, fica cifrada nesta máquina
+            (Windows DPAPI) e vale para os próximos meses.
+          </div>
+        </div>
+      {% elif tem_senha_guardada %}
+        <p class="explica" style="margin-top:1rem">
+          <span class="pastilha ok">senha guardada</span>
+          Esta conta já tem senha de PDF no cofre — os arquivos protegidos abrem
+          sozinhos.
+        </p>
+      {% endif %}
+
+      {% if proc.documentos %}
+        <h3>Documentos reconhecidos</h3>
+        <div class="rolagem">
+          <table>
+            <thead><tr><th>Arquivo</th><th>Tipo</th><th>Confiança</th>
+                       <th class="num">Valor</th><th>Vencimento</th><th></th></tr></thead>
+            <tbody>
+              {% for d in proc.documentos %}
+              <tr>
+                <td><span class="mono">{{ d.nome }}</span>
+                    {% if d.paginas %}<span class="pastilha pendente">{{ d.paginas }}p</span>{% endif %}
+                    <div style="color:var(--suave);font-size:.76rem">{{ d.motivo[:110] }}</div></td>
+                <td><strong>{{ d.tipo.rotulo }}</strong></td>
+                <td><span class="pastilha {{ 'ok' if d.confianca >= LIMIAR_CONFIANCA else 'atencao' }}">
+                    {{ (d.confianca * 100) | round | int }}%</span></td>
+                <td class="num">{{ d.valor | moeda }}</td>
+                <td>{{ d.vencimento | data_br }}</td>
+                <td style="text-align:right">
+                  <form class="linha" method="post" action="/conta/{{ conta.id }}/documento">
+                    <input type="hidden" name="competencia" value="{{ competencia }}">
+                    <input type="hidden" name="caminho" value="{{ d.caminho }}">
+                    <select name="tipo" onchange="this.form.submit()">
+                      {% for t in tipos %}
+                        <option value="{{ t.value }}" {{ 'selected' if t == d.tipo }}>{{ t.rotulo }}</option>
+                      {% endfor %}
+                    </select>
+                  </form>
+                  {# Sem o descarte, o envio errado é definitivo: o arquivo fica
+                     na pasta da competência e a coleta o traz de volta toda vez. #}
+                  <form class="linha" method="post"
+                        action="/conta/{{ conta.id }}/documento/descartar"
+                        onsubmit="return confirm('Tirar {{ d.nome }} de {{ competencia }}?
+
+O arquivo sai da pasta da competência e não fica cópia. Para trazer de volta, envie de novo.')">
+                    <input type="hidden" name="competencia" value="{{ competencia }}">
+                    <input type="hidden" name="caminho" value="{{ d.caminho }}">
+                    <button type="submit" title="não é desta fatura">descartar</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+    {# --------------------------------------------- 3. dados da autorização #}
+    {% elif etapa == Etapa.AUTORIZACAO %}
+      {% set s_valor = sugestao.get('valor') %}
+      {% set s_venc = sugestao.get('vencimento') %}
+      {% set s_num = sugestao.get('numero_documento') %}
+
+      <p class="explica">
+        Os campos já vêm preenchidos com o que foi lido dos documentos — o
+        boleto tem preferência. <strong>Tudo é editável:</strong> o que você
+        digitar vale sobre o que foi extraído.
+      </p>
+
+      {% if sugestao.get('pagante_aviso') %}
+        <div class="aviso alerta">{{ sugestao.get('pagante_aviso') }}</div>
+      {% endif %}
+
+      <form method="post" action="/conta/{{ conta.id }}/etapa/{{ etapa.value }}"
+            class="campos" id="form-autorizacao" style="align-items:flex-start">
+        <input type="hidden" name="competencia" value="{{ competencia }}">
+        {% set v_txt = '%.2f'|format(s_valor)|replace('.', ',') if s_valor is not none else '' %}
+        <div>
+          <label for="valor">Valor</label>
+          <input id="valor" name="valor" placeholder="1.234,56" style="width:9rem"
+                 inputmode="decimal"
+                 data-sugerido="{{ v_txt }}" value="{{ v_txt }}">
+          <span class="origem-campo {{ 'estimado' if sugestao.get('valor_estimado') }}">
+            {{ sugestao.get('valor_origem') or 'não encontrado nos documentos' }}
+          </span>
+        </div>
+        <div>
+          <label for="vencimento">Vencimento</label>
+          <input id="vencimento" name="vencimento" type="date" style="width:10rem"
+                 data-sugerido="{{ s_venc.isoformat() if s_venc else '' }}"
+                 value="{{ s_venc.isoformat() if s_venc else '' }}">
+          <span class="origem-campo">
+            {{ sugestao.get('vencimento_origem') or 'não encontrado nos documentos' }}
+          </span>
+        </div>
+        <div>
+          <label for="numero_documento">Nº do documento</label>
+          <input id="numero_documento" name="numero_documento" style="width:9rem"
+                 data-sugerido="{{ s_num or '' }}" value="{{ s_num or '' }}">
+          <span class="origem-campo">
+            {{ sugestao.get('numero_origem') or 'não encontrado nos documentos' }}
+          </span>
+        </div>
+        {# ---- quem paga, quem recebe, como se paga ---- #}
+        {% set s_pag = sugestao.get('pagante') %}
+        {% set s_ben = sugestao.get('beneficiario') %}
+        <div style="flex-basis:100%;display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-start">
+          <div style="flex:1 1 22rem;min-width:0">
+            <label for="pagante">Pagante — quem paga (B7)</label>
+            <select id="pagante" name="pagante" style="width:100%">
+              {% for p in PAGANTES %}
+                <option value="{{ p.nome }}" {{ 'selected' if p.nome == s_pag }}>{{ p.rotulo }}</option>
+              {% endfor %}
+              {# Nome fora do cadastro continua disponível, para não trocar
+                 silenciosamente o que já ia na autorização. #}
+              {% if s_pag and s_pag not in PAGANTES|map(attribute='nome')|list %}
+                <option value="{{ s_pag }}" selected>{{ s_pag }} (fora do cadastro)</option>
+              {% endif %}
+              <option value="" {{ 'selected' if not s_pag }}>— manter o que está na planilha —</option>
+            </select>
+            <span class="origem-campo" style="max-width:none">
+              {%- if sugestao.get('pagante_cnpj') -%}
+                CNPJ {{ sugestao.get('pagante_cnpj') }} — entra em B9 se a tabela da planilha não reconhecer o nome
+              {%- else -%}
+                cadastro em Configuração &rsaquo; Pagantes
+              {%- endif -%}
+            </span>
+          </div>
+
+          <div style="flex:1 1 22rem;min-width:0">
+            <label for="beneficiario">Beneficiário — quem recebe (C13)</label>
+            <select id="beneficiario" name="beneficiario" style="width:100%">
+              {% for b in BENEFICIARIOS %}
+                <option value="{{ b.nome }}" {{ 'selected' if b.nome == s_ben }}>{{ b.rotulo }}</option>
+              {% endfor %}
+              {% if s_ben and s_ben not in BENEFICIARIOS|map(attribute='nome')|list %}
+                <option value="{{ s_ben }}" selected>{{ s_ben }} (fora do cadastro)</option>
+              {% endif %}
+              <option value="" {{ 'selected' if not s_ben }}>— manter o que está na planilha —</option>
+            </select>
+            <span class="origem-campo" style="max-width:none">
+              {%- set bd = sugestao.get('beneficiario_dados') -%}
+              {%- if bd -%}
+                {{ bd.cnpj or 'sem CNPJ' }}{% if bd.contato %} · {{ bd.contato }}{% endif %}
+                {%- if bd.banco %} · {{ bd.banco }} ag {{ bd.agencia or '—' }} c/c {{ bd.conta or '—' }}{% endif %}
+              {%- else -%}
+                <strong>fora do cadastro</strong> — sem CNPJ nem dados bancários para
+                pôr na autorização
+              {%- endif -%}
+            </span>
+            {# Cadastrar sem sair daqui. Ir até Configuração no meio do
+               preenchimento custa perder o que já está na tela — e é
+               justamente aqui que se descobre que o beneficiário falta. #}
+            <style>
+              .cadastro-rapido{margin-top:.45rem}
+              .cadastro-rapido>summary{
+                cursor:pointer;user-select:none;list-style:none;display:inline-block;
+                font-size:.76rem;color:var(--acento);padding:.15rem 0}
+              .cadastro-rapido>summary::-webkit-details-marker{display:none}
+              .cadastro-rapido>summary:hover{text-decoration:underline}
+              .cadastro-rapido form{
+                margin-top:.5rem;padding:.75rem .8rem;border-radius:8px;
+                background:var(--fundo);border:1px solid var(--borda)}
+              .cadastro-rapido .par{display:flex;gap:.6rem;flex-wrap:wrap}
+              .cadastro-rapido .par>div{flex:1 1 8rem;min-width:0}
+              .cadastro-rapido input{width:100%;box-sizing:border-box;margin-bottom:.35rem}
+              .cadastro-rapido button{margin-top:.35rem}
+            </style>
+            <details class="cadastro-rapido" {{ 'open' if not bd }}>
+              <summary>{{ '+ cadastrar este beneficiário' if not bd
+                           else '+ cadastrar outro beneficiário' }}</summary>
+              {# Sem <form> aqui: este bloco vive DENTRO do formulário da
+                 autorização, e formulário aninhado é inválido — o navegador
+                 usa o </form> interno para fechar o externo, e o que vem
+                 depois (as OBSERVAÇÕES, entre outros) deixa de ser enviado.
+                 Os campos ficam onde estão e se ligam pelo atributo `form`;
+                 o <form> de verdade está logo depois da autorização. #}
+              <div class="campos-ben">
+                <label for="bn_nome">Nome — como vai sair em FORNECEDOR</label>
+                <input id="bn_nome" form="form-ben-novo" name="nome" required autocomplete="off"
+                       value="{{ '' if bd else (sugestao.get('beneficiario') or '') }}">
+                <div class="par">
+                  <div>
+                    <label for="bn_cnpj">CNPJ</label>
+                    <input id="bn_cnpj" form="form-ben-novo" name="cnpj" autocomplete="off"
+                           placeholder="00.000.000/0000-00">
+                  </div>
+                  <div>
+                    <label for="bn_contato">Contato</label>
+                    <input id="bn_contato" form="form-ben-novo" name="contato" autocomplete="off">
+                  </div>
+                  <div>
+                    <label for="bn_telefone">Telefone</label>
+                    <input id="bn_telefone" form="form-ben-novo" name="telefone" autocomplete="off">
+                  </div>
+                </div>
+                <div class="par">
+                  <div>
+                    <label for="bn_banco">Banco</label>
+                    <input id="bn_banco" form="form-ben-novo" name="banco" autocomplete="off"
+                           placeholder="237 - BRADESCO">
+                  </div>
+                  <div>
+                    <label for="bn_agencia">Agência</label>
+                    <input id="bn_agencia" form="form-ben-novo" name="agencia" autocomplete="off">
+                  </div>
+                  <div>
+                    <label for="bn_conta">Conta</label>
+                    <input id="bn_conta" form="form-ben-novo" name="conta" autocomplete="off">
+                  </div>
+                </div>
+                <div class="dica-campo">
+                  Vai para o mesmo cadastro de Configuração &rsaquo; Beneficiários e já
+                  fica escolhido nesta conta. Nome repetido substitui o registro.
+                </div>
+                <button class="principal" type="submit" form="form-ben-novo">Cadastrar e usar</button>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div>
+          <label for="forma_pgto">Forma de pgto (F18)</label>
+          <select id="forma_pgto" name="forma_pgto" style="width:10rem">
+            {% for f in FORMAS_PAGAMENTO %}
+              <option value="{{ f }}" {{ 'selected' if f == sugestao.get('forma_pgto') }}>{{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="meio_pgto">Meio de pgto (J18)</label>
+          <select id="meio_pgto" name="meio_pgto" style="width:11rem">
+            {% for m in MEIOS_PAGAMENTO %}
+              <option value="{{ m }}" {{ 'selected' if m == sugestao.get('meio_pgto') }}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# O campo OBSERVAÇÕES (A32) ocupa a linha inteira: é texto corrido. #}
+        {% set s_desc = sugestao.get('descricao') %}
+        <div style="flex-basis:100%">
+          <label for="descricao">Observações — descrição do evento</label>
+          <textarea id="descricao" name="descricao" rows="3"
+                    data-sugerido="{{ s_desc or '' }}"
+                    placeholder="Referente a … do mês de …">{{ s_desc or '' }}</textarea>
+          <span class="origem-campo {{ 'estimado' if sugestao.get('descricao_conferir') }}"
+                style="max-width:none">
+            {{ sugestao.get('descricao_origem') or 'texto do registro, sem mês a ajustar' }}
+          </span>
+        </div>
+
+        {# Linha própria: com a origem embaixo de cada campo, botão junto
+           dos inputs ficava desalinhado. #}
+        <div style="flex-basis:100%;display:flex;gap:.6rem;align-items:center">
+          <button class="principal" type="submit">Gerar autorização</button>
+          <button type="button" class="discreto" id="restaurar"
+                  title="Voltar aos valores lidos dos documentos" hidden>↺ Desfazer edição</button>
+        </div>
+      </form>
+      {# O formulário do cadastro rápido mora aqui, fora do da autorização;
+         os campos lá em cima se ligam a ele por `form="form-ben-novo"`. #}
+      <form id="form-ben-novo" method="post"
+            action="/conta/{{ conta.id }}/beneficiario-novo">
+        <input type="hidden" name="competencia" value="{{ competencia }}">
+      </form>
+
+
+      {% if proc.documentos %}
+        <details style="margin-top:1rem">
+          <summary style="cursor:pointer;font-size:.85rem;color:var(--suave)">
+            De onde saíram esses números ({{ proc.documentos|length }} documento(s))
+          </summary>
+          <table style="margin-top:.5rem">
+            <thead><tr><th>Documento</th><th>Tipo</th><th class="num">Valor lido</th>
+                       <th>Vencimento</th><th>Nº</th></tr></thead>
+            <tbody>
+              {% for d in proc.documentos %}
+              <tr>
+                <td class="mono">{{ d.nome }}</td>
+                <td>{{ d.tipo.rotulo }}</td>
+                <td class="num">{{ d.valor | moeda }}</td>
+                <td>{{ d.vencimento | data_br }}</td>
+                <td class="mono">{{ d.numero_documento or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </details>
+      {% endif %}
+
+      <p class="mono" style="margin:.8rem 0 0">
+        Gera <strong>{{ nome_base }}.xlsx</strong> em dados/trabalho/
+      </p>
+
+    {# ------------------------------------------------- 7. rascunho do e-mail #}
+    {# Num painel antigo os campos editados seriam descartados em silêncio e o
+       rascunho sairia com os destinatários do settings.yaml. Melhor nem
+       oferecer: cai no botão genérico de sempre. #}
+    {% elif etapa == Etapa.EMAIL and not painel_desatualizado %}
+      {# O que já foi rodado manda; senão, a prévia montada agora. #}
+      {% set e = (r.detalhes if r and r.detalhes.assunto else (previa_email | default({}, true))) %}
+      <p class="explica">
+        Confira e ajuste antes de mandar. <strong>Dá para trocar
+        destinatários, cópia, assunto e texto</strong> — vale só para esta
+        mensagem, o <span class="mono">settings.yaml</span> não muda.
+        {% if envia_email | default(false) %}
+          <strong>O botão despacha na hora</strong>, direto pelo Outlook — não
+          passa por Rascunhos e não há como cancelar depois.
+        {% else %}
+          O Outlook salva em <em>Rascunhos</em>; quem clica em enviar é você.
+        {% endif %}
+      </p>
+      {% if proc.email_enviado and not proc.enviado_por_fora %}
+        <div class="aviso alerta">
+          Esta fatura <strong>já foi enviada</strong>
+          {%- if proc.enviado_em %} em {{ proc.enviado_em | data_br }}{% endif %}.
+          O botão vai recusar. Para reenviar de propósito, use
+          <em>Reabrir esta etapa</em> — só então a trava sai.
+        </div>
+      {% endif %}
+
+      <form method="post" action="/conta/{{ conta.id }}/etapa/{{ etapa.value }}"
+            class="bloco-email" id="form-email">
+        <input type="hidden" name="competencia" value="{{ competencia }}">
+        <input type="hidden" name="editou_email" value="1">
+
+        <label for="email_para">Para</label>
+        <input id="email_para" name="email_para" autocomplete="off"
+               placeholder="Nome &lt;endereco@empresa.com.br&gt;; outro@empresa.com.br"
+               value="{{ e.get('para') if e.get('para') != '(ninguém configurado)' else '' }}">
+
+        <label for="email_copia">Cópia</label>
+        <input id="email_copia" name="email_copia" autocomplete="off"
+               value="{{ e.get('copia') if e.get('copia') != '(ninguém configurado)' else '' }}">
+        <div class="dica-campo">
+          Separe por <span class="mono">;</span> — deixe em branco para não copiar ninguém.
+        </div>
+
+        <label for="email_assunto">Assunto</label>
+        <input id="email_assunto" name="email_assunto" value="{{ e.get('assunto', '') }}">
+
+        <label for="email_corpo">Mensagem</label>
+        <textarea id="email_corpo" name="email_corpo" rows="9">{{ e.get('corpo', '') }}</textarea>
+
+        {% if e.get('anexo') %}
+          <div class="dica-campo">
+            Anexo: <span class="mono">{{ e.get('anexo') }}</span>
+            {%- if e.get('anexos_mb') %} · {{ e.get('anexos_mb') }} MB{% endif %}
+          </div>
+        {% endif %}
+
+        <div class="barra-acoes" style="margin:.9rem 0 0">
+          <button type="submit">Atualizar prévia</button>
+          {# Sem confirm() em cima do envio: a aprovação foi retirada a pedido do
+             usuário. O que segura engano agora é a prévia acima e a trava
+             contra segundo envio. #}
+          <button type="submit" name="confirmar" value="sim" class="principal">
+            {{ 'Enviar pelo Outlook' if envia_email | default(false)
+               else 'Criar rascunho no Outlook' }}
+          </button>
+        </div>
+      </form>
+
+    {# ------------------------------------------------------- demais etapas #}
+    {% else %}
+      <p class="explica">{{ EXPLICACAO_ETAPA.get(etapa.value, '') }}</p>
+    {% endif %}
+
+    {# ------------------------------------------------ resultado da etapa #}
+    {% if r %}
+      <div class="resultado {{ CORES_SITUACAO[foco.situacao][0] }}" id="resultado-etapa">
+        <strong>{{ r.mensagem }}</strong>
+
+        {% if r.detalhes.operacoes %}
+          <div class="rotulo-bloco">O que será feito:</div>
+          <ul>{% for op in r.detalhes.operacoes %}<li class="mono">{{ op }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if r.detalhes.realizadas %}
+          <ul>{% for op in r.detalhes.realizadas %}<li class="mono">{{ op }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if r.detalhes.assunto %}
+          <div class="previa-email">
+            <div><strong>Para:</strong> {{ r.detalhes.para }}</div>
+            <div><strong>Cópia:</strong> {{ r.detalhes.copia }}</div>
+            <div><strong>Assunto:</strong> {{ r.detalhes.assunto }}</div>
+            {% if r.detalhes.anexo %}<div><strong>Anexo:</strong> {{ r.detalhes.anexo }}</div>{% endif %}
+            <pre>{{ r.detalhes.corpo }}</pre>
+          </div>
+        {% endif %}
+        {% if r.detalhes.linha_alvo %}
+          <div class="mono rotulo-bloco">
+            aba <strong>{{ r.detalhes.aba }}</strong>, linha
+            <strong>{{ r.detalhes.linha_alvo }}</strong>
+            {%- if r.detalhes.celula_marcacao %} — marcar a caixa
+              <strong>{{ r.detalhes.celula_marcacao }}</strong>, o que deixa a
+              linha verde
+            {%- else %} — será pintada de verde{% endif %}
+          </div>
+        {% endif %}
+        {% if r.detalhes.alteracoes %}
+          <details><summary>{{ r.detalhes.alteracoes|length }} célula(s) alterada(s)</summary>
+            <ul>{% for cel, par in r.detalhes.alteracoes.items() %}
+              <li class="mono">{{ cel }}: {{ par[0] }} → <strong>{{ par[1] }}</strong></li>
+            {% endfor %}</ul>
+          </details>
+        {% endif %}
+        {% if r.detalhes.conferir %}
+          <div class="rotulo-bloco">Confira antes de seguir:</div>
+          <ul>{% for c in r.detalhes.conferir %}<li>{{ c }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if r.detalhes.notas %}
+          <ul>{% for n in r.detalhes.notas %}<li>{{ n }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if r.detalhes.falhas %}
+          <div class="rotulo-bloco">Falhas:</div>
+          <ul>{% for f in r.detalhes.falhas %}<li class="mono">{{ f }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% for a in r.artefatos %}<div class="mono">→ {{ a.name }}</div>{% endfor %}
+      </div>
+
+      {# ---------------------------------------- visualizador do PDF gerado #}
+      {% set pdf = r.artefatos | selectattr('suffix', 'equalto', '.pdf') | first %}
+      {# Sem a rota /ver (painel antigo) o visor só mostraria "Not Found". #}
+      {% if pdf and etapa in (Etapa.PDF_FINAL, Etapa.PDF_AUTORIZACAO) and not painel_desatualizado %}
+        {# A hora do arquivo entra no endereço: PDF refeito = endereço novo,
+           e o cache do navegador não tem o que reaproveitar. #}
+        {% set src = '/conta/' ~ conta.id ~ '/ver?arquivo=' ~ (pdf | string | urlencode)
+                     ~ '&v=' ~ (pdf | versao_do_arquivo) %}
+        <div class="visor">
+          <div class="visor-topo">
+            <strong class="mono">{{ pdf.name }}</strong>
+            <span>
+              <a class="botao" href="{{ src }}" target="_blank" rel="noopener">Abrir em outra aba</a>
+              <a class="botao" href="{{ src }}&baixar=1" download>Baixar</a>
+            </span>
+          </div>
+          {# Confira antes de publicar: é este arquivo que vai para o
+             OneDrive e para o anexo do e-mail. #}
+          <iframe src="{{ src }}#view=FitH" title="Pré-visualização de {{ pdf.name }}"></iframe>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {# ------------------------------------------------------------- ações #}
+  <div class="palco-acoes">
+    <div>
+      {% set anterior = trilha[foco.numero - 2] if foco.numero > 1 else None %}
+      {% if anterior %}
+        <a class="botao" href="/conta/{{ conta.id }}?competencia={{ competencia }}&etapa={{ anterior.etapa.value }}">&larr; Voltar</a>
+      {% endif %}
+    </div>
+
+    <div class="barra-acoes" style="margin:0;justify-content:flex-end">
+      {# COLETA, AUTORIZACAO e EMAIL têm formulário próprio no corpo da etapa —
+         botão genérico aqui perderia os campos digitados. #}
+      {% if etapa not in (Etapa.COLETA, Etapa.AUTORIZACAO)
+            and (etapa != Etapa.EMAIL or painel_desatualizado) %}
+        <form class="linha" method="post" action="/conta/{{ conta.id }}/etapa/{{ etapa.value }}">
+          <input type="hidden" name="competencia" value="{{ competencia }}">
+          <button class="{{ '' if foco.sensivel else 'principal' }}">
+            {{ 'Simular e revisar' if foco.sensivel else 'Executar' }}
+          </button>
+        </form>
+      {% endif %}
+
+      {% if foco.sensivel and foco.situacao == Situacao.PENDENTE and r
+            and (etapa != Etapa.EMAIL or painel_desatualizado) %}
+        <form class="linha" method="post" action="/conta/{{ conta.id }}/etapa/{{ etapa.value }}"
+              onsubmit="return confirm('Confirmar: {{ etapa.rotulo }}?\n\nEsta ação grava fora de dados/.');">
+          <input type="hidden" name="competencia" value="{{ competencia }}">
+          <input type="hidden" name="confirmar" value="sim">
+          <button class="{{ 'perigo' if r.detalhes.tem_sobrescrita else 'principal' }}">
+            {{ 'Confirmar (sobrescreve)' if r.detalhes.tem_sobrescrita else 'Confirmar e executar' }}
+          </button>
+        </form>
+      {% endif %}
+
+      <details class="manual">
+        <summary>Já resolvi por fora</summary>
+        <form method="post" action="/conta/{{ conta.id }}/etapa/{{ etapa.value }}/manual">
+          <input type="hidden" name="competencia" value="{{ competencia }}">
+          <input name="observacao" placeholder="o que você fez" style="width:16rem">
+          <button>Marcar como concluída</button>
+        </form>
+      </details>
+
+      {% if r %}
+        {# Na coleta, refazer apaga os arquivos coletados — o caminho de volta
+           é reenviar. Nas outras etapas só esquece o resultado. #}
+        <form class="linha" method="post" action="/conta/{{ conta.id }}/reabrir"
+              {% if etapa == Etapa.COLETA %}
+              onsubmit="return confirm('Zerar a coleta de {{ competencia }}?
+
+Os documentos coletados saem da pasta desta competência e a etapa volta ao ponto de envio. Para continuar, envie os arquivos da fatura de novo.')"
+              {% endif %}>
+          <input type="hidden" name="competencia" value="{{ competencia }}">
+          <input type="hidden" name="etapa" value="{{ etapa.value }}">
+          <button class="discreto"
+                  title="{{ 'Zerar a coleta: os documentos saem e você envia de novo' if etapa == Etapa.COLETA else 'Esquecer o resultado desta etapa' }}">
+            ↺ {{ 'Zerar e recomeçar' if etapa == Etapa.COLETA else 'Refazer' }}
+          </button>
+        </form>
+      {% endif %}
+
+      {% set proxima = trilha[foco.numero] if foco.numero < trilha|length else None %}
+      {% if proxima and foco.concluida %}
+        <a class="botao principal-link"
+           href="/conta/{{ conta.id }}?competencia={{ competencia }}&etapa={{ proxima.etapa.value }}">
+          Próxima: {{ proxima.etapa.rotulo }} &rarr;
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<details class="cartao compacto" style="margin-top:1.4rem">
+  <summary style="cursor:pointer;font-weight:550">Registro desta conta</summary>
+  <table style="margin-top:.6rem">
+    <tbody>
+      <tr><td style="width:14rem;color:var(--suave)">Pasta de entrada</td>
+          <td class="mono">{{ pasta_entrada }}</td></tr>
+      <tr><td style="color:var(--suave)">Área de trabalho</td>
+          <td class="mono">{{ pasta_trabalho }}</td></tr>
+      <tr><td style="color:var(--suave)">Planilha base</td>
+          <td class="mono">{{ conta.modelo_base or '— não definida —' }}</td></tr>
+      <tr><td style="color:var(--suave)">Beneficiário</td><td>{{ conta.autorizacao.beneficiario or '—' }}</td></tr>
+      <tr><td style="color:var(--suave)">Pagante</td><td>{{ conta.autorizacao.pagante or '—' }}</td></tr>
+      <tr><td style="color:var(--suave)">Descrição do evento</td><td>{{ conta.autorizacao.descricao or '—' }}</td></tr>
+    </tbody>
+  </table>
+  <div class="barra-acoes">
+    <form class="linha" method="post" action="/conta/{{ conta.id }}/reabrir">
+      <input type="hidden" name="competencia" value="{{ competencia }}">
+      <button class="discreto">Reabrir todas as etapas</button>
+    </form>
+  </div>
+</details>
+
+<script>
+/* --------------------------------------------------------------- upload
+   Confere cada arquivo na hora em que é escolhido: extensão, tamanho e
+   nome repetido. O erro da tentativa anterior fica esmaecido enquanto há
+   arquivo na fila, para não parecer que a escolha atual falhou. */
+(function () {
+  const form = document.getElementById('form-envio');
+  const campo = document.getElementById('arquivos');
+  const area = document.getElementById('area');
+  const resumo = document.getElementById('escolhidos');
+  const fila = document.getElementById('fila');
+  const recado = document.getElementById('recado');
+  const botao = document.getElementById('botao-envio');
+  if (!form || !campo || !area) return;
+
+  const ACEITAS = ['pdf', 'xml', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'];
+  const LIMITE = 40 * 1024 * 1024;   // acima disso o envio demora
+  let jaNaPasta = [];
+  try { jaNaPasta = JSON.parse(form.dataset.jaNaPasta || '[]'); } catch (e) {}
+  const naPasta = jaNaPasta.map(function (n) { return n.toLowerCase(); });
+
+  let escolhidos = [];   // File[] — a fonte da verdade; o input é derivado
+
+  function extensao(nome) {
+    const p = nome.lastIndexOf('.');
+    return p < 0 ? '' : nome.slice(p + 1).toLowerCase();
+  }
+
+  function tamanho(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function avaliar(arquivo, indice) {
+    const ext = extensao(arquivo.name);
+    const nome = arquivo.name.toLowerCase();
+    if (ACEITAS.indexOf(ext) < 0) {
+      return { nivel: 'erro', texto: ext ? 'tipo .' + ext + ' não entra' : 'sem extensão' };
+    }
+    if (arquivo.size === 0) {
+      return { nivel: 'erro', texto: 'arquivo vazio' };
+    }
+    for (let i = 0; i < indice; i++) {
+      if (escolhidos[i].name.toLowerCase() === nome) {
+        return { nivel: 'erro', texto: 'repetido na seleção' };
+      }
+    }
+    if (naPasta.indexOf(nome) >= 0) {
+      // O servidor compara o CONTEÚDO: idêntico é reaproveitado, diferente
+      // ganha sufixo. Nos dois casos não sai cópia repetida no PDF final.
+      return { nivel: 'atencao', texto: 'este nome já está em ' + '{{ competencia }}' };
+    }
+    if (arquivo.size > LIMITE) {
+      return { nivel: 'atencao', texto: 'grande, o envio vai demorar' };
+    }
+    return { nivel: 'ok', texto: 'pronto' };
+  }
+
+  function sincronizarInput() {
+    /* O input só aceita FileList; monta-se uma nova via DataTransfer. */
+    const balde = new DataTransfer();
+    escolhidos.forEach(function (a) { balde.items.add(a); });
+    campo.files = balde.files;
+  }
+
+  function desenhar() {
+    fila.textContent = '';
+    let validos = 0, problemas = 0;
+
+    escolhidos.forEach(function (arquivo, i) {
+      const juizo = avaliar(arquivo, i);
+      if (juizo.nivel === 'erro') { problemas++; } else { validos++; }
+
+      const item = document.createElement('li');
+      item.className = 'item-envio ' + juizo.nivel;
+
+      const selo = document.createElement('span');
+      selo.className = 'tipo';
+      selo.textContent = extensao(arquivo.name).toUpperCase() || '?';
+
+      const nome = document.createElement('span');
+      nome.className = 'nome mono';
+      nome.textContent = arquivo.name;
+      nome.title = arquivo.name;
+
+      const peso = document.createElement('span');
+      peso.className = 'peso';
+      peso.textContent = tamanho(arquivo.size);
+
+      const estado = document.createElement('span');
+      estado.className = 'pastilha ' + (juizo.nivel === 'ok' ? 'ok' : juizo.nivel);
+      estado.textContent = juizo.texto;
+
+      const tirar = document.createElement('button');
+      tirar.type = 'button';
+      tirar.className = 'tirar';
+      tirar.textContent = '✕';
+      tirar.title = 'Tirar da lista';
+      tirar.addEventListener('click', function () {
+        escolhidos.splice(i, 1);
+        sincronizarInput();
+        desenhar();
+      });
+
+      item.append(selo, nome, peso, estado, tirar);
+      fila.appendChild(item);
+    });
+
+    const tem = escolhidos.length > 0;
+    fila.hidden = !tem;
+    resumo.textContent = tem
+      ? (escolhidos.length === 1 ? '1 arquivo escolhido' : escolhidos.length + ' arquivos escolhidos')
+      : '';
+
+    if (!tem) {
+      recado.hidden = true;
+      botao.disabled = true;
+    } else if (validos === 0) {
+      recado.hidden = false;
+      recado.className = 'recado-fila erro';
+      recado.textContent = 'Nenhum arquivo aceito. Só entram PDF, XML, XLSX, PNG e JPG.';
+      botao.disabled = true;
+    } else {
+      recado.hidden = false;
+      recado.className = 'recado-fila ok';
+      recado.textContent = problemas
+        ? validos + ' arquivo(s) serão enviados; ' + problemas + ' ficam de fora. Clique em “Enviar e coletar”.'
+        : 'Tudo certo — clique em “Enviar e coletar”.';
+      botao.disabled = false;
+    }
+
+    /* O bloco de erro da tela é de ANTES deste envio. Enquanto há fila,
+       ele fica esmaecido com um aviso — era o que confundia. */
+    const anterior = document.getElementById('resultado-etapa');
+    if (anterior && anterior.classList.contains('erro')) {
+      anterior.classList.toggle('antigo', tem);
+      let nota = document.getElementById('nota-antigo');
+      if (tem && !nota) {
+        nota = document.createElement('div');
+        nota.id = 'nota-antigo';
+        nota.className = 'rotulo-bloco';
+        nota.textContent = '↑ resultado da tentativa anterior — os arquivos escolhidos ainda não foram enviados';
+        anterior.appendChild(nota);
+      } else if (!tem && nota) {
+        nota.remove();
+      }
+    }
+  }
+
+  function acrescentar(lista) {
+    for (let i = 0; i < lista.length; i++) { escolhidos.push(lista[i]); }
+    sincronizarInput();
+    desenhar();
+  }
+
+  campo.addEventListener('change', function () {
+    /* Escolher de novo pelo seletor substitui a fila — é o que o navegador
+       já faz e quebrar essa expectativa confunde mais do que ajuda. */
+    escolhidos = Array.prototype.slice.call(campo.files);
+    desenhar();
+  });
+
+  form.addEventListener('submit', function (evento) {
+    /* Os recusados não sobem: arquivo vazio viraria PDF de 0 byte na pasta
+       de entrada, e a coleta tentaria classificar isso. */
+    const bons = escolhidos.filter(function (a, i) {
+      return avaliar(a, i).nivel !== 'erro';
+    });
+    if (!bons.length) { evento.preventDefault(); return; }
+    escolhidos = bons;
+    sincronizarInput();
+  });
+
+  ['dragenter', 'dragover'].forEach(function (evento) {
+    area.addEventListener(evento, function (e) {
+      e.preventDefault(); area.classList.add('sobre');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (evento) {
+    area.addEventListener(evento, function (e) {
+      e.preventDefault(); area.classList.remove('sobre');
+    });
+  });
+  area.addEventListener('drop', function (e) {
+    /* Arrastar acumula: dá para soltar o boleto e depois a nota. */
+    acrescentar(e.dataTransfer.files);
+  });
+
+  desenhar();
+})();
+
+/* ------------------------------------------------- etapa da autorização
+   Os campos vêm preenchidos pela leitura dos documentos, mas mandam menos
+   que você: qualquer edição vale, e o botão devolve o valor original. */
+(function () {
+  const form = document.getElementById('form-autorizacao');
+  const desfazer = document.getElementById('restaurar');
+  if (!form || !desfazer) return;
+
+  const campos = Array.prototype.slice.call(
+    form.querySelectorAll('input[data-sugerido], textarea[data-sugerido]'));
+
+  function editado() {
+    return campos.some(function (c) { return c.value !== c.dataset.sugerido; });
+  }
+
+  function conferir() {
+    desfazer.hidden = !editado();
+    campos.forEach(function (c) {
+      c.classList.toggle('editado', c.value !== c.dataset.sugerido);
+    });
+  }
+
+  campos.forEach(function (c) {
+    c.addEventListener('input', conferir);
+    c.addEventListener('change', conferir);
+  });
+
+  desfazer.addEventListener('click', function () {
+    campos.forEach(function (c) { c.value = c.dataset.sugerido; });
+    conferir();
+  });
+
+  conferir();
+})();
+</script>
+{% endblock %}

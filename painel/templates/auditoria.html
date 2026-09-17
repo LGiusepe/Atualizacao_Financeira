@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Auditoria{% endblock %}
+
+{% block conteudo %}
+<h1>Auditoria</h1>
+<p class="sub">
+  Toda escrita fora de <span class="mono">dados/</span> fica registrada aqui —
+  com origem, destino, backup e hash do arquivo gravado.
+</p>
+
+{% if not registros %}
+  <div class="cartao">
+    <p class="vazio">Nenhuma gravação registrada até agora.</p>
+  </div>
+{% else %}
+<div class="cartao rolagem">
+  <table>
+    <thead>
+      <tr><th>Quando</th><th>Conta</th><th>Ação</th><th>Destino</th><th>Backup</th></tr>
+    </thead>
+    <tbody>
+      {% for r in registros %}
+      <tr>
+        <td class="mono">{{ r.quando | replace('T', ' ') }}</td>
+        <td>{{ r.conta_id or '—' }}
+          {% if r.competencia %}<div class="mono">{{ r.competencia }}</div>{% endif %}</td>
+        <td>
+          <span class="pastilha {{ 'pendente' if r.simulado else 'ok' }}">
+            {{ r.acao }}{{ ' (simulado)' if r.simulado }}
+          </span>
+        </td>
+        <td class="mono">{{ r.destino }}</td>
+        <td class="mono">{{ r.backup or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titulo %}Entrada manual{% endblock %}
+
+{% block conteudo %}
+<h1>Entrada manual</h1>
+<p class="sub">
+  Baixou a fatura na mão? Solte o arquivo em
+  <span class="mono">{{ pasta_entrada }}</span> e a automação identifica o que é.
+</p>
+
+<div class="cartao compacto">
+  <h3 style="margin-top:0">Como o vínculo com a conta é feito</h3>
+  <p style="margin:0;font-size:.88rem;color:var(--suave)">
+    Arquivo dentro de uma subpasta com o <strong>id da conta</strong>
+    (ex.: <span class="mono">{{ pasta_entrada }}\claro-guarulhos\</span>) é
+    vinculado automaticamente. Arquivo solto na raiz recebe um palpite, que você
+    confirma abaixo.
+  </p>
+</div>
+
+{% if erro %}
+  <div class="aviso perigo">Não consegui ler a pasta de entrada: {{ erro }}</div>
+{% endif %}
+
+{% if not documentos %}
+  <div class="cartao"><p class="vazio">A pasta de entrada está vazia.</p></div>
+{% else %}
+<div class="cartao rolagem">
+  <table>
+    <thead>
+      <tr><th>Arquivo</th><th>Tipo detectado</th><th>Confiança</th>
+          <th>Conta sugerida</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for d in documentos %}
+      <tr>
+        <td><span class="mono">{{ d.nome }}</span>
+            {% if d.paginas %}<span class="pastilha pendente">{{ d.paginas }}p</span>{% endif %}
+            <div style="color:var(--suave);font-size:.78rem">{{ d.motivo }}</div></td>
+        <td><strong>{{ d.tipo.rotulo }}</strong></td>
+        <td>
+          {% if d.confianca >= LIMIAR_CONFIANCA %}
+            <span class="pastilha ok">{{ (d.confianca * 100) | round | int }}%</span>
+          {% else %}
+            <span class="pastilha atencao">{{ (d.confianca * 100) | round | int }}%</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set palpites = sugestoes.get(d.caminho | string) or [] %}
+          {% if palpites %}
+            {% for conta, escore in palpites %}
+              <div>
+                <a href="/conta/{{ conta.id }}?competencia={{ competencia }}">{{ conta.rotulo }}</a>
+                <span class="mono">{{ (escore * 100) | round | int }}%</span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <span style="color:var(--suave)">sem palpite</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right">
+          {% set palpites = sugestoes.get(d.caminho | string) or [] %}
+          {% if palpites %}
+            <a class="botao" href="/conta/{{ palpites[0][0].id }}?competencia={{ competencia }}">Abrir conta</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

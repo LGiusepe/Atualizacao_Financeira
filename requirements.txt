@@ -1,0 +1,14 @@
+# Automação Financeira — dependências
+# Todas gratuitas e de código aberto. Custo recorrente do projeto: R$ 0,00.
+# O que é pago (Office 365) você já licencia — a automação só usa o que existe.
+
+openpyxl>=3.1.5        # ler e escrever .xlsx preservando fórmulas
+pypdf>=6.0             # ler, contar páginas e juntar PDFs
+pywin32>=311           # Excel/Outlook via COM + cofre DPAPI do Windows
+PyYAML>=6.0            # arquivos de configuração
+fastapi>=0.138         # painel web local
+uvicorn>=0.34          # servidor do painel
+jinja2>=3.1            # templates do painel
+python-multipart>=0.0.9  # upload de arquivos no painel
+# Edição do settings.yaml pelo painel preservando os comentários do arquivo.
+ruamel.yaml>=0.18

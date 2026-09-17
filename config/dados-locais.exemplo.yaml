@@ -1,0 +1,83 @@
+# --------------------------------------------------------------------------- #
+# Modelo de `config/dados-locais.yaml` — o arquivo que guarda o que identifica
+# a sua empresa e por isso NÃO vai para o repositório.
+#
+# Copie este arquivo para `config/dados-locais.yaml` e preencha com a sua
+# realidade. A regra `config/*.yaml` do .gitignore mantém o preenchido fora do
+# git; só este `.exemplo.yaml` é versionado.
+#
+# Nada aqui é obrigatório: sem o arquivo o projeto roda igual, com molde de
+# senha neutro e sem as tabelas dos scripts de manutenção.
+# --------------------------------------------------------------------------- #
+
+# Molde da senha de primeiro acesso. `{ano}` vira o ano corrente, de modo que
+# a senha caduca sozinha na virada. Ausente, vale o molde neutro do código.
+senha_inicial: "Trocar{ano}@"
+
+# --------------------------------------------------------------------------- #
+# O que `scripts/conferir_publicacao.py` procura antes de um commit.
+#
+# As listas moram fora do código de propósito: o conferidor é versionado, e
+# guardar os nomes dentro dele publicaria exatamente o que ele existe para
+# impedir. Já aconteceu.
+# --------------------------------------------------------------------------- #
+conferir_publicacao:
+
+  # Espaço entre as palavras é opcional na busca: "Empresa Exemplo" também
+  # acha "EmpresaExemplo", "EMPRESAEXEMPLO" e "empresa exemplo".
+  nome_da_empresa:
+    - Empresa Exemplo
+
+  # Primeiro nome de quem aparece nas planilhas e nos e-mails. Inclua as
+  # variantes com e sem acento — a busca é literal.
+  nomes_de_pessoa:
+    - Fulano
+    - Beltrano
+    - Sicrano
+
+  # Com quem a empresa contrata. Revela relação comercial: em repositório
+  # público, trate como dado a proteger.
+  fornecedores:
+    - Operadora Alfa
+    - Operadora Beta
+    - Software Gama
+
+# --------------------------------------------------------------------------- #
+# Tabelas de `scripts/enriquecer_registro.py` — o script que casa as pastas do
+# OneDrive com as linhas da planilha de checklist.
+# --------------------------------------------------------------------------- #
+enriquecer_registro:
+
+  # Fornecedores cujo e-mail precisa citar a unidade/cidade atendida, porque
+  # a mesma empresa atende vários pontos e a fatura não se distingue sozinha.
+  operadoras:
+    - operadora alfa
+    - operadora beta
+
+  # Contas que saem num e-mail só, com um anexo por fatura. A chave é o nome
+  # da pasta; o valor é o nome do grupo.
+  grupos_email:
+    operadora alfa: operadora alfa
+
+  # Casos que semelhança de texto nunca acerta: o nome da pasta e o nome do
+  # fornecedor na planilha não têm parentesco, ou duas linhas têm texto
+  # idêntico. O valor pode ser o texto da coluna FORNECEDOR ou o NÚMERO DA
+  # LINHA no Excel — o número é o único jeito quando o texto se repete.
+  apelidos:
+    alfa-link: OPERADORA ALFA TELECOMUNICACOES LTDA
+    gama-modulo-um: 12
+    gama-modulo-dois: 13
+
+# --------------------------------------------------------------------------- #
+# Lista oficial de contas ativas usada por `scripts/aplicar_lista_ativas.py`.
+# Quem não está na lista é desativado — sem apagar nada.
+#
+# `id` vazio = a conta existe na planilha mas ainda não tem pasta de
+# autorização no OneDrive; fica registrada para não sumir do radar.
+# --------------------------------------------------------------------------- #
+aplicar_lista_ativas:
+  competencia: agosto/2026
+  ativas:
+    - {id: alfa-link, fornecedor: OPERADORA ALFA TELECOMUNICACOES LTDA, contrato: "000/000000000", observacao: ""}
+    - {id: beta-voz, fornecedor: OPERADORA BETA, contrato: "000000000", observacao: "CONFIRMAR qual serviço é este contrato"}
+    - {id: "", fornecedor: SOFTWARE GAMA LTDA, contrato: "", observacao: "sem pasta de autorização no OneDrive"}

@@ -1,0 +1,106 @@
+# Copie para `settings.yaml` e ajuste. O arquivo real fica fora do git.
+#
+#   copy config\settings.exemplo.yaml config\settings.yaml
+
+caminhos:
+  # Raiz do SharePoint/OneDrive sincronizado.
+  onedrive: >-
+    C:\Users\SEU.USUARIO\OneDrive - SUA EMPRESA\Documentos
+  # Subpasta onde ficam as autorizações — relativa à raiz acima.
+  autorizacoes: "Autorizações de pagamento"
+  # Planilha de controle — também relativa à raiz.
+  planilha_contas: "CONTAS E ACESSOS.xlsx"
+
+  # Área local. TUDO é montado aqui primeiro; só vai para o OneDrive
+  # depois da sua confirmação no painel.
+  trabalho: "dados/trabalho"
+  entrada: "dados/entrada"
+  backups: "dados/backups"
+
+email:
+  para:
+    - nome: "Fulana do Financeiro"
+      endereco: "financeiro@suaempresa.com.br"
+  copia:
+    - nome: "Tecnologia"
+      endereco: "ti@suaempresa.com.br"
+  assunto: "Fatura {empresa}"
+  # Terceira linha da assinatura: "<setor> | <este nome>". Vale para todo
+  # mundo — função e setor são de cada pessoa, em Configuração › E-mail.
+  assinatura_empresa: "Sua Empresa Ltda"
+  # Placeholders: {empresa} {competencia_extenso} {vencimento} {valor}
+  # {trecho_cidade} {assinatura}
+  # {assinatura} é opcional: sem ela, o painel acrescenta as três linhas no
+  # fim do corpo. Ponha-a quando quiser a assinatura em outro lugar do texto.
+  corpo: |
+    Boa tarde.
+
+    Segue em anexo a autorização de pagamento referente à fatura da {empresa}{trecho_cidade}, competência {competencia_extenso}.
+
+    Vencimento: {vencimento}
+    Valor: {valor}
+
+    O anexo contém, na ordem: autorização de pagamento, demonstrativo da cobrança, boleto e nota fiscal.
+
+    Atenciosamente,
+  # Usado quando VÁRIAS faturas do MESMO fornecedor viram um e-mail só, com um
+  # anexo por fatura. Placeholders: {empresa} {competencia_extenso}
+  # {lista_faturas} {valor_total} {assinatura}
+  corpo_agrupado: |
+    Boa tarde.
+
+    Seguem em anexo as autorizações referentes às faturas da {empresa}, competência {competencia_extenso}:
+
+    {lista_faturas}
+
+    Valor total: {valor_total}
+
+    Atenciosamente,
+  trecho_cidade_operadora: " — unidade {cidade}"
+  # true despacha pelo Outlook; false só deixa em Rascunhos.
+  # A simulação vence: ligada, nada sai.
+  enviar_automaticamente: false
+
+pdf:
+  ordem:
+    - autorizacao
+    - demonstrativo
+    - boleto
+    - nota_fiscal
+  nome_igual_ao_xlsx: true
+
+checklist:
+  cor_enviado: "FF92D050"
+  prefixo_aba: "Checklist-"
+
+seguranca:
+  # true = NENHUMA escrita fora de dados/. Comece assim.
+  simulacao: true
+  confirmar_antes_de_gravar: true
+  backup_antes_de_sobrescrever: true
+
+# Limpeza da bancada (trabalho/, entrada/, backups/). Nunca toca na pasta de
+# produção: a trava de exclusão recusa "Autorizações de pagamento" em
+# qualquer configuração. Um arquivo só sai quando o mesmo conteúdo é achado
+# na pasta de destino.
+manutencao:
+  limpar_entrada_ao_concluir: true
+  limpeza_mensal: true
+  # Competências mantidas em trabalho/ (2 = mês atual e anterior).
+  meses_de_trabalho: 2
+  # Idade máxima dos backups; os 3 mais recentes nunca saem.
+  dias_de_backup: 90
+
+outlook:
+  janela_dias: 45
+  pastas: []
+  extensoes_anexo: [".pdf", ".xml"]
+
+# Quem entra no painel.
+acesso:
+  # Primeiro administrador, criado sozinho na primeira subida do painel.
+  # Ele entra com a senha inicial de config/dados-locais.yaml e troca
+  # antes de ver qualquer tela. Depois disso este campo não faz mais nada
+  # — o cadastro passa a ser Configuração › Usuários.
+  primeiro_administrador: "nome@empresa.com.br"
+  nome_do_administrador: "Nome de Quem Administra"
